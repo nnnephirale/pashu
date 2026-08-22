@@ -1,0 +1,13 @@
+Paper texture scans used by brik.space "Tactile Press Type" (slug tactile-press-type-ms4dto8h)
+Hosted on base44.app. Fetched 2026-08-22 for reference.
+Licensing unknown — treat as reference only until confirmed.
+
+https://base44.app/api/apps/69cbcd44d3da2a5cef013f5e/files/mp/public/69cbcd44d3da2a5cef013f5e/b33a2f375_paperTextures_0_mrx8sjxy.png
+https://base44.app/api/apps/69cbcd44d3da2a5cef013f5e/files/mp/public/69cbcd44d3da2a5cef013f5e/3c6eac6ef_paperTextures_1_mrx8sjy3.png
+https://base44.app/api/apps/69cbcd44d3da2a5cef013f5e/files/mp/public/69cbcd44d3da2a5cef013f5e/285998889_paperTextures_2_mrx8sjy9.png
+https://base44.app/api/apps/69cbcd44d3da2a5cef013f5e/files/mp/public/69cbcd44d3da2a5cef013f5e/b4f00b38a_paperTextures_3_mrx8sjyd.png
+https://base44.app/api/apps/69cbcd44d3da2a5cef013f5e/files/mp/public/69cbcd44d3da2a5cef013f5e/2c6f41c5f_paperTextures_4_mrx8sjyi.png
+https://base44.app/api/apps/69cbcd44d3da2a5cef013f5e/files/mp/public/69cbcd44d3da2a5cef013f5e/1ac64f14a_paperTextures_5_mrx8sjyn.png
+https://base44.app/api/apps/69cbcd44d3da2a5cef013f5e/files/mp/public/69cbcd44d3da2a5cef013f5e/1bfa0350c_paperTextures_6_mrx8sjys.png
+https://base44.app/api/apps/69cbcd44d3da2a5cef013f5e/files/mp/public/69cbcd44d3da2a5cef013f5e/6fc7dc556_paperTextures_7_mrx8sjyx.png
+https://base44.app/api/apps/69cbcd44d3da2a5cef013f5e/files/mp/public/69cbcd44d3da2a5cef013f5e/050825799_paperTextures_8_mrx8sjz2.png
