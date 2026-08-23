@@ -11,6 +11,11 @@ from file://.
 import base64, mimetypes, os, re, sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+
+# The session API always lives on the Worker; the app itself may be served from
+# GitHub Pages, so both are absolute.
+API_BASE = os.environ.get('PASHU_API_BASE', 'https://paper-image-shuffle.nnnephirale.workers.dev')
+APP_BASE = os.environ.get('PASHU_APP_BASE', 'https://nnnephirale.github.io/pashu/')
 SRC = os.path.join(ROOT, 'src')
 
 MODULES = ['rng', 'controls', 'paper', 'folds', 'imperfections', 'session', 'app']
@@ -90,6 +95,7 @@ def main():
     import datetime
     stamp = datetime.datetime.now().strftime('%m%d-%H%M')
     js = js.replace('__BUILD__', stamp)
+    js = js.replace('__API_BASE__', API_BASE).replace('__APP_BASE__', APP_BASE)
 
     css = open(os.path.join(SRC, 'app.css')).read()
     html = open(os.path.join(SRC, 'template.html')).read()

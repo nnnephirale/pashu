@@ -661,12 +661,6 @@ function urlRow(label, url, note){
 }
 
 document.getElementById('btnShare').addEventListener('click', async () => {
-  if (!SESSION.canPublish()){
-    shareBody.innerHTML = `<p class="share-note">Sharing needs the app to be served over
-      the web. Open your deployed URL rather than the local file, then Share from there.</p>`;
-    shareModal.classList.add('on');
-    return;
-  }
   shareBody.innerHTML = `<p class="share-note">Packing session\u2026</p>`;
   shareModal.classList.add('on');
   try {
@@ -676,10 +670,10 @@ document.getElementById('btnShare').addEventListener('click', async () => {
       photos
     });
     const { id } = await SESSION.publish(payload);
-    const base = location.origin;
+    const base = SESSION.appBase();
     shareBody.innerHTML =
-      urlRow('Editable', `${base}/s/${id}`, 'dials open \u00b7 Reset returns to this session') +
-      urlRow('Play only', `${base}/v/${id}`, 'no panel, just the animation') +
+      urlRow('Editable', `${base}?s=${id}`, 'dials open \u00b7 Reset returns to this session') +
+      urlRow('Play only', `${base}?v=${id}`, 'no panel, just the animation') +
       `<p class="share-note">Anyone with a link can open it. Images are stored as sent.</p>`;
     shareBody.querySelectorAll('[data-copy]').forEach(b =>
       b.addEventListener('click', () => {
@@ -805,7 +799,7 @@ window.__ps = {
   applySize();
   syncPlay();
   requestAnimationFrame(tick);
-  const route = SESSION.routeOf(location.pathname);
+  const route = SESSION.routeOf();
   await addSources(papers, PAPERS, false);
   if (route){
     try {

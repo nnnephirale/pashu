@@ -1,3 +1,7 @@
 .DS_Store
 node_modules/
 .wrangler/
+
+# Third-party reference footage — research material, not needed to build or run.
+# Kept out of the public repo deliberately; see notes/reference-teardown.md.
+notes/*.mp4
