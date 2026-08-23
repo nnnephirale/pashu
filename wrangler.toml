@@ -1,0 +1,15 @@
+name = "paper-image-shuffle"
+main = "worker/src/index.js"
+compatibility_date = "2026-08-01"
+
+# The built app is served as static assets; the Worker only handles /api/*.
+# not_found_handling makes /s/<id> and /v/<id> fall through to index.html.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[[r2_buckets]]
+binding = "SESSIONS"
+bucket_name = "paper-image-shuffle-sessions"

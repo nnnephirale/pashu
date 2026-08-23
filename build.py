@@ -13,7 +13,7 @@ import base64, mimetypes, os, re, sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(ROOT, 'src')
 
-MODULES = ['rng', 'controls', 'paper', 'folds', 'imperfections', 'app']
+MODULES = ['rng', 'controls', 'paper', 'folds', 'imperfections', 'session', 'app']
 NS = {m: '__m_' + m for m in MODULES}
 
 IMPORT_NAMED = re.compile(r"^import\s*\{([^}]*)\}\s*from\s*'\./(\w+)\.js';?\s*$", re.M)
@@ -102,6 +102,12 @@ def main():
 
     dest = os.path.join(ROOT, 'index.html')
     with open(dest, 'w') as f:
+        f.write(html)
+
+    # the Worker serves ./public as its static assets
+    pub = os.path.join(ROOT, 'public')
+    os.makedirs(pub, exist_ok=True)
+    with open(os.path.join(pub, 'index.html'), 'w') as f:
         f.write(html)
     print('index.html  %.1f MB  (%d demo images, %d paper scans)'
           % (os.path.getsize(dest) / 1e6, len(demo), len(paper)))

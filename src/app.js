@@ -3,6 +3,7 @@ import { hash, shash, clamp, easeOutCubic, easeInOutCubic, mulberry32 } from './
 import * as P from './paper.js';
 import * as F from './folds.js';
 import * as IMP from './imperfections.js';
+import * as SESSION from './session.js';
 
 const BUILD = '__BUILD__';
 const canvas = document.getElementById('c');
@@ -149,7 +150,12 @@ const refreshStrips = () => {
 async function addSources(list, srcs, demo = false){
   let added = 0;
   for (const src of srcs){
-    try { const img = await P.loadImage(src); list.push({ src, img, on: true, demo }); added++; }
+    try {
+      const img = await P.loadImage(src);
+      const e = { src, img, on: true, demo };
+      if (demo) e.demoIndex = DEMO.indexOf(src);
+      list.push(e); added++;
+    }
     catch { /* skip */ }
   }
   refreshStrips();
@@ -631,6 +637,80 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'r') { resetTimeline(); }
 });
 
+// ── sessions ────────────────────────────────────────────────────────────────
+const shareModal = document.getElementById('shareModal');
+const shareBody = document.getElementById('shareBody');
+const closeShare = () => shareModal.classList.remove('on');
+document.getElementById('shareClose').addEventListener('click', closeShare);
+shareModal.addEventListener('click', (e) => { if (e.target === shareModal) closeShare(); });
+
+function urlRow(label, url, note){
+  const id = 'u' + Math.random().toString(36).slice(2, 8);
+  return `<div class="url-row">
+      <div class="url-label">${label}<span>${note}</span></div>
+      <div class="url-box"><input readonly value="${url}" id="${id}">
+        <button data-copy="${id}">Copy</button></div>
+    </div>`;
+}
+
+document.getElementById('btnShare').addEventListener('click', async () => {
+  if (!SESSION.canPublish()){
+    shareBody.innerHTML = `<p class="share-note">Sharing needs the app to be served over
+      the web. Open your deployed URL rather than the local file, then Share from there.</p>`;
+    shareModal.classList.add('on');
+    return;
+  }
+  shareBody.innerHTML = `<p class="share-note">Packing session\u2026</p>`;
+  shareModal.classList.add('on');
+  try {
+    const payload = SESSION.serialize({
+      settings: C.all(),
+      size: { w: canvas.width, h: canvas.height, preset: sizePreset.value },
+      photos
+    });
+    const { id } = await SESSION.publish(payload);
+    const base = location.origin;
+    shareBody.innerHTML =
+      urlRow('Editable', `${base}/s/${id}`, 'dials open \u00b7 Reset returns to this session') +
+      urlRow('Play only', `${base}/v/${id}`, 'no panel, just the animation') +
+      `<p class="share-note">Anyone with a link can open it. Images are stored as sent.</p>`;
+    shareBody.querySelectorAll('[data-copy]').forEach(b =>
+      b.addEventListener('click', () => {
+        const inp = document.getElementById(b.dataset.copy);
+        inp.select();
+        navigator.clipboard.writeText(inp.value).then(() => {
+          b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy'; }, 1600);
+        });
+      }));
+  } catch (err){
+    shareBody.innerHTML = `<p class="share-note err">${err.message}</p>`;
+  }
+});
+
+async function applySession(sess, mode){
+  if (sess.size && Number.isFinite(sess.size.w)){
+    sizeW.value = sess.size.w; sizeH.value = sess.size.h;
+    if (sess.size.preset) sizePreset.value = sess.size.preset;
+    applySize();
+  }
+  photos = [];
+  for (const e of (sess.images || [])){
+    const src = (e.d !== undefined && DEMO[e.d]) ? DEMO[e.d] : e.u;
+    if (!src) continue;
+    try {
+      const img = await P.loadImage(src);
+      photos.push({ src, img, on: e.on !== false, demo: e.d !== undefined, demoIndex: e.d });
+    } catch { /* skip */ }
+  }
+  C.setExtra('demoDismissed', true);
+  for (const k in (sess.settings || {})) C.set(k, sess.settings[k]);
+  // Reset now returns to the session, not to the app defaults
+  C.setBaseline(sess.settings || {});
+  refreshStrips();
+  gridKey = ''; resetTimeline();
+  if (mode === 'view') document.body.classList.add('view-only');
+}
+
 document.getElementById('btnExport').addEventListener('click', () => {
   canvas.toBlob(b => {
     const a = document.createElement('a');
@@ -715,9 +795,18 @@ window.__ps = {
   applySize();
   syncPlay();
   requestAnimationFrame(tick);
-  const loads = [ addSources(papers, PAPERS, false) ];
-  if (!C.getExtra('demoDismissed')) loads.push(addSources(photos, DEMO, true));
-  await Promise.all(loads);
+  const route = SESSION.routeOf(location.pathname);
+  await addSources(papers, PAPERS, false);
+  if (route){
+    try {
+      await applySession(await SESSION.load(route.id), route.mode);
+    } catch (err){
+      toast(err.message);
+      await addSources(photos, DEMO, true);
+    }
+  } else if (!C.getExtra('demoDismissed')){
+    await addSources(photos, DEMO, true);
+  }
   resetTimeline();
   fitCanvas();
 })();

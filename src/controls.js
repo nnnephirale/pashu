@@ -14,6 +14,7 @@ const specs = {};
 const els = {};
 const sections = [];          // [{ label, keys: [] }]
 const extra = {};             // non-schema state (canvas size)
+let baseline = null;          // a loaded session's values become Reset's target
 let loading = false;
 
 function readStore(){
@@ -54,6 +55,12 @@ function coerce(spec, v){
 export function getExtra(k){ return extra[k]; }
 export function setExtra(k, v){ extra[k] = v; persist(); }
 export function snapshot(){ return { ...state }; }
+
+// When a saved session is opened, Reset should return to THAT session's
+// settings, not to the app defaults — the session is the document.
+export function setBaseline(obj){ baseline = obj ? { ...obj } : null; }
+export function hasBaseline(){ return !!baseline; }
+const targetFor = (k) => (baseline && k in baseline) ? baseline[k] : defaults[k];
 export function restore(snap){ for (const k in snap) set(k, snap[k]); }
 
 export function get(k){ return state[k]; }
@@ -81,12 +88,12 @@ export function all(){ return { ...state }; }
 // never to whatever was last stored.
 export function resetAll(){
   clearStore();
-  for (const k in defaults) set(k, defaults[k]);
+  for (const k in defaults) set(k, targetFor(k));
 }
 export function resetSection(label){
   const sec = sections.find(s => s.label === label);
   if (!sec) return;
-  for (const k of sec.keys) set(k, defaults[k]);
+  for (const k of sec.keys) set(k, targetFor(k));
 }
 export function sectionKeys(label){
   const sec = sections.find(s => s.label === label);

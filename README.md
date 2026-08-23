@@ -36,6 +36,50 @@ Stored values are re-validated against the schema on load: wrong type, out of
 range, or an option that no longer exists gets dropped and the default used. A
 stale store from an older build can't brick the panel.
 
+## Sharing a session
+
+**Share** in the panel footer packs the whole document — every control value, the
+canvas size and the images — and returns two links:
+
+- `/s/<id>` — **editable**. All dials open. Reset returns to *that session's*
+  settings rather than the app defaults, because the session is the document.
+- `/v/<id>` — **play only**. No panel, no size bar, canvas fills the window.
+
+Demo images are stored by index rather than by bytes (they're already in the
+page), so a demo-only session is a couple of KB. Uploaded images are re-encoded
+to 1800px JPEG before travelling. Sessions are immutable — sharing again makes a
+new id.
+
+Sharing needs the app served over http(s); from a double-clicked local file the
+button explains that and does nothing.
+
+### Deploying
+
+The Worker serves the app *and* the session API, so it's one deploy. You need a
+Cloudflare account (the free tier covers this).
+
+```bash
+npx wrangler login
+npx wrangler r2 bucket create paper-image-shuffle-sessions
+npx wrangler deploy
+```
+
+To run it locally with simulated R2 first:
+
+```bash
+npx wrangler dev --local --port 4740
+```
+
+`worker/src/index.js` is the whole backend: `POST /api/session` writes one R2
+object and returns an id, `GET /api/session/<id>` reads it back, and everything
+else falls through to the static app. `/s/<id>` and `/v/<id>` resolve to
+index.html via `not_found_handling = "single-page-application"`, and
+`run_worker_first = ["/api/*"]` keeps the API from being swallowed by that.
+
+**Anyone with a link can open it.** Sessions are unlisted, not private — the ids
+are random 10-character strings, but there's no auth. Don't share images you
+wouldn't put on the open web.
+
 ## Editing
 
 `index.html` is **generated** — don't edit it directly. The readable source is
@@ -165,6 +209,9 @@ A new sheet is picked every quantized frame, so the print re-lights on each swap
 - `src/imperfections.js` — print wear, camera shake, grain, vignette
 - `src/controls.js` — panel UI + state
 - `src/app.js` — schema, timeline, render loop
+- `src/session.js` — session serialise / publish / load / routing
 - `src/template.html`, `src/app.css` — shell and styles
+- `worker/src/index.js`, `wrangler.toml` — Cloudflare Worker + R2 session store
+- `public/index.html` — generated; what the Worker serves
 - `notes/reference-teardown.md` — measurements from both references
 - `assets/paper/SOURCE_URLS.txt` — provenance of the paper scans (licence unknown)
