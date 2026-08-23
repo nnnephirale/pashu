@@ -553,9 +553,14 @@ function applySize(){
 }
 function fitCanvas(){
   const stage = document.getElementById('stage');
-  const pad = 88;
+  const pad = document.body.classList.contains('view-only') ? 0 : 88;
   const aw = stage.clientWidth - pad, ah = stage.clientHeight - pad;
-  const s = Math.min(aw / canvas.width, ah / canvas.height, 1.2);
+  // Never let a zero-size measurement stick: a hidden or not-yet-laid-out stage
+  // would pin the canvas at 0px and it would stay there even once real space
+  // appeared, because nothing recomputes it.
+  if (aw <= 0 || ah <= 0) return;
+  const s = Math.min(aw / canvas.width, ah / canvas.height,
+                     document.body.classList.contains('view-only') ? 4 : 1.2);
   canvas.style.width = Math.round(canvas.width * s) + 'px';
   canvas.style.height = Math.round(canvas.height * s) + 'px';
 }
@@ -567,6 +572,8 @@ sizePreset.addEventListener('change', () => {
   sizeW.value = w; sizeH.value = h; applySize();
 });
 window.addEventListener('resize', fitCanvas);
+if (window.ResizeObserver)
+  new ResizeObserver(() => fitCanvas()).observe(document.getElementById('stage'));
 
 // ── actions ──────────────────────────────────────────────────────────────────
 const toastEl = document.getElementById('toast');
@@ -688,6 +695,9 @@ document.getElementById('btnShare').addEventListener('click', async () => {
 });
 
 async function applySession(sess, mode){
+  // set the layout mode first — fitCanvas measures the stage, which is a
+  // different size once the panel is gone
+  if (mode === 'view') document.body.classList.add('view-only');
   if (sess.size && Number.isFinite(sess.size.w)){
     sizeW.value = sess.size.w; sizeH.value = sess.size.h;
     if (sess.size.preset) sizePreset.value = sess.size.preset;
@@ -708,7 +718,7 @@ async function applySession(sess, mode){
   C.setBaseline(sess.settings || {});
   refreshStrips();
   gridKey = ''; resetTimeline();
-  if (mode === 'view') document.body.classList.add('view-only');
+  fitCanvas();
 }
 
 document.getElementById('btnExport').addEventListener('click', () => {
