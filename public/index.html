@@ -125,6 +125,15 @@ canvas{ display:block; max-width:100%; max-height:100%; border-radius:3px; }
 .pbtn:hover{background:var(--fill-2);color:var(--ink)}
 .pbtn:active{transform:scale(.98)}
 
+.pbtn.save{flex:0 0 auto;padding-left:12px;padding-right:12px}
+.pbtn.save:disabled{opacity:.5;cursor:default}
+.pbtn.save.dirty{
+  color:var(--rose);border-color:rgba(180,116,110,.3);background:rgba(180,116,110,.07);
+}
+.pbtn.save.dirty:hover{background:rgba(180,116,110,.12)}
+/* a quiet standing reminder that leaving now discards the edits */
+body.unsaved .panel{box-shadow:var(--shadow-soft),0 0 0 1px rgba(180,116,110,.25)}
+
 /* ---------- sections ---------- */
 .section{border-bottom:1px solid var(--line)}
 .section:last-child{border-bottom:0}
@@ -421,6 +430,7 @@ body.view-only .canvas-wrap{border-radius:0;box-shadow:none}
     <button class="pbtn" id="btnPlay">Pause</button>
     <button class="pbtn" id="btnExport">PNG</button>
     <button class="pbtn" id="btnShare">Share</button>
+    <button class="pbtn save" id="btnSave" hidden>Saved</button>
   </footer>
 </aside>
 
@@ -497,14 +507,19 @@ const sections = [];          // [{ label, keys: [] }]
 const extra = {};             // non-schema state (canvas size)
 let baseline = null;          // a loaded session's values become Reset's target
 let loading = false;
+let persistOn = true;
 
 function readStore(){
   try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
   catch { return {}; }
 }
 let saveTimer = null;
+// While a saved session is open, edits are transient: they must not survive a
+// reload, or "close without saving" would silently keep them.
+function setPersist(on){ persistOn = !!on; }
+
 function persist(){
-  if (loading) return;
+  if (loading || !persistOn) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try { localStorage.setItem(STORE_KEY, JSON.stringify({ v: state, x: extra })); }
@@ -828,7 +843,7 @@ let notify = () => {};
 function onReset(fn){ notify = fn; }
 function resetNotify(label, before){ notify(label, before); }
 
-return { getExtra, setExtra, snapshot, setBaseline, hasBaseline, restore, get, set, onChange, onAny, setLocked, all, resetAll, resetSection, sectionKeys, build, onReset };
+return { setPersist, getExtra, setExtra, snapshot, setBaseline, hasBaseline, restore, get, set, onChange, onAny, setLocked, all, resetAll, resetSection, sectionKeys, build, onReset };
 })();
 
 const __m_paper = (function(){
@@ -1560,8 +1575,20 @@ async function publish(session){
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(session)
   });
-  if (!r.ok) throw new Error(`publish failed (${r.status}) ${await r.text()}`);
-  return r.json();                       // { id }
+  if (!r.ok) throw new Error(`Publish failed (${r.status})`);
+  return r.json();                       // { id, key }
+}
+
+// Overwrites in place, so the shared URL stays the same forever.
+async function save(id, key, session){
+  const r = await fetch(`${API_BASE}/api/session/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'x-edit-key': key || '' },
+    body: JSON.stringify(session)
+  });
+  if (r.status === 403) throw new Error('This link can view but not edit this session.');
+  if (!r.ok) throw new Error(`Save failed (${r.status})`);
+  return r.json();
 }
 
 async function load(id){
@@ -1575,12 +1602,14 @@ async function load(id){
 // hands out.
 function routeOf(loc = location){
   const q = new URLSearchParams(loc.search);
+  const key = q.get('k') || '';
   for (const [k, mode] of [['s', 'edit'], ['v', 'view']]){
     const id = q.get(k);
-    if (id && /^[A-Za-z0-9_-]{4,40}$/.test(id)) return { mode, id };
+    if (id && /^[A-Za-z0-9_-]{4,40}$/.test(id))
+      return { mode, id, key: mode === 'edit' ? key : '' };
   }
   const m = /^(?:.*)\/([sv])\/([A-Za-z0-9_-]{4,40})\/?$/.exec(loc.pathname);
-  return m ? { mode: m[1] === 'v' ? 'view' : 'edit', id: m[2] } : null;
+  return m ? { mode: m[1] === 'v' ? 'view' : 'edit', id: m[2], key } : null;
 }
 
 // Where a shared link should point. Served over the web, that's here; opened
@@ -1591,9 +1620,19 @@ function appBase(){
   return APP_BASE.replace(/\/?$/, '/');
 }
 
+// What counts as "changed". Deliberately excludes anything transient (the frame
+// counter, play state) — only the document itself.
+function signature({ settings, size, photos }){
+  return JSON.stringify({
+    s: settings,
+    z: size,
+    i: photos.map(p => [p.demo ? 'd' + p.demoIndex : p.src, p.on ? 1 : 0])
+  });
+}
+
 const canPublish = () => true;
 
-return { serialize, publish, load, routeOf, appBase, canPublish };
+return { serialize, publish, save, load, routeOf, appBase, signature, canPublish };
 })();
 
 const __m_app = (function(){
@@ -1608,7 +1647,7 @@ const SESSION = __m_session;
 
 
 
-const BUILD = '0823-2307';
+const BUILD = '0827-1020';
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const printBuf = document.createElement('canvas');
@@ -1754,6 +1793,7 @@ function renderStrip(strip, list, onToggle, onRemove){
 }
 const refreshStrips = () => {
   dirty = true;
+  syncSaveBtn();
   // the empty state already says how to add images — don't say it twice
   photoHint.style.display = photos.length ? '' : 'none';
   renderStrip(photoStrip, photos,
@@ -2267,6 +2307,40 @@ window.addEventListener('keydown', (e) => {
 });
 
 // ── sessions ────────────────────────────────────────────────────────────────
+// A published session owns its URL forever. Opening one puts the app in session
+// mode: edits are live but transient until Save writes them back to the same id.
+let session = null;            // { id, key, sig }
+const docNow = () => ({
+  settings: C.all(),
+  size: { w: canvas.width, h: canvas.height, preset: sizePreset.value },
+  photos
+});
+const isDirty = () => !!session && SESSION.signature(docNow()) !== session.sig;
+
+function markClean(){
+  if (session) session.sig = SESSION.signature(docNow());
+  syncSaveBtn();
+}
+function syncSaveBtn(){
+  const btn = document.getElementById('btnSave');
+  if (!btn) return;
+  const on = !!session && !!session.key;
+  btn.hidden = !on;
+  if (!on) return;
+  const dirty = isDirty();
+  btn.textContent = dirty ? 'Save *' : 'Saved';
+  btn.classList.toggle('dirty', dirty);
+  btn.disabled = !dirty;
+  document.body.classList.toggle('unsaved', dirty);
+}
+C.onAny(() => syncSaveBtn());
+
+// Leaving with unsaved edits throws them away, so say so.
+window.addEventListener('beforeunload', (e) => {
+  if (!isDirty()) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 const shareModal = document.getElementById('shareModal');
 const shareBody = document.getElementById('shareBody');
 const closeShare = () => shareModal.classList.remove('on');
@@ -2282,6 +2356,21 @@ function urlRow(label, url, note){
     </div>`;
 }
 
+document.getElementById('btnSave').addEventListener('click', async () => {
+  if (!session || !session.key) return;
+  const btn = document.getElementById('btnSave');
+  btn.disabled = true; btn.textContent = 'Saving\u2026';
+  try {
+    await SESSION.save(session.id, session.key, SESSION.serialize(docNow()));
+    C.setBaseline(C.all());          // Reset now returns to what was just saved
+    markClean();
+    toast('Session saved');
+  } catch (err){
+    toast(err.message);
+    syncSaveBtn();
+  }
+});
+
 document.getElementById('btnShare').addEventListener('click', async () => {
   shareBody.innerHTML = `<p class="share-note">Packing session\u2026</p>`;
   shareModal.classList.add('on');
@@ -2291,12 +2380,18 @@ document.getElementById('btnShare').addEventListener('click', async () => {
       size: { w: canvas.width, h: canvas.height, preset: sizePreset.value },
       photos
     });
-    const { id } = await SESSION.publish(payload);
+    const { id, key } = await SESSION.publish(payload);
+    session = { id, key, sig: SESSION.signature(docNow()) };
+    C.setBaseline(C.all());
+    C.setPersist(false);
+    syncSaveBtn();
     const base = SESSION.appBase();
     shareBody.innerHTML =
-      urlRow('Editable', `${base}?s=${id}`, 'dials open \u00b7 Reset returns to this session') +
+      urlRow('Editable', `${base}?s=${id}&k=${key}`, 'dials open \u00b7 Save writes back here') +
       urlRow('Play only', `${base}?v=${id}`, 'no panel, just the animation') +
-      `<p class="share-note">Anyone with a link can open it. Images are stored as sent.</p>`;
+      `<p class="share-note">These URLs are permanent \u2014 Save updates this session in
+       place rather than making a new one. The editable link carries its edit key,
+       so anyone you send it to can overwrite it; the play-only link cannot.</p>`;
     shareBody.querySelectorAll('[data-copy]').forEach(b =>
       b.addEventListener('click', () => {
         const inp = document.getElementById(b.dataset.copy);
@@ -2310,7 +2405,7 @@ document.getElementById('btnShare').addEventListener('click', async () => {
   }
 });
 
-async function applySession(sess, mode){
+async function applySession(sess, mode, route){
   // set the layout mode first — fitCanvas measures the stage, which is a
   // different size once the panel is gone
   if (mode === 'view') document.body.classList.add('view-only');
@@ -2335,6 +2430,10 @@ async function applySession(sess, mode){
   refreshStrips();
   gridKey = ''; resetTimeline();
   fitCanvas();
+  // edits from here are transient until Save
+  C.setPersist(false);
+  session = { id: route.id, key: route.key || '', sig: '' };
+  markClean();
 }
 
 document.getElementById('btnExport').addEventListener('click', () => {
@@ -2425,7 +2524,7 @@ window.__ps = {
   await addSources(papers, PAPERS, false);
   if (route){
     try {
-      await applySession(await SESSION.load(route.id), route.mode);
+      await applySession(await SESSION.load(route.id), route.mode, route);
     } catch (err){
       toast(err.message);
       await addSources(photos, DEMO, true);

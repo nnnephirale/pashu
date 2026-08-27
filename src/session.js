@@ -41,8 +41,20 @@ export async function publish(session){
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(session)
   });
-  if (!r.ok) throw new Error(`publish failed (${r.status}) ${await r.text()}`);
-  return r.json();                       // { id }
+  if (!r.ok) throw new Error(`Publish failed (${r.status})`);
+  return r.json();                       // { id, key }
+}
+
+// Overwrites in place, so the shared URL stays the same forever.
+export async function save(id, key, session){
+  const r = await fetch(`${API_BASE}/api/session/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'x-edit-key': key || '' },
+    body: JSON.stringify(session)
+  });
+  if (r.status === 403) throw new Error('This link can view but not edit this session.');
+  if (!r.ok) throw new Error(`Save failed (${r.status})`);
+  return r.json();
 }
 
 export async function load(id){
@@ -56,12 +68,14 @@ export async function load(id){
 // hands out.
 export function routeOf(loc = location){
   const q = new URLSearchParams(loc.search);
+  const key = q.get('k') || '';
   for (const [k, mode] of [['s', 'edit'], ['v', 'view']]){
     const id = q.get(k);
-    if (id && /^[A-Za-z0-9_-]{4,40}$/.test(id)) return { mode, id };
+    if (id && /^[A-Za-z0-9_-]{4,40}$/.test(id))
+      return { mode, id, key: mode === 'edit' ? key : '' };
   }
   const m = /^(?:.*)\/([sv])\/([A-Za-z0-9_-]{4,40})\/?$/.exec(loc.pathname);
-  return m ? { mode: m[1] === 'v' ? 'view' : 'edit', id: m[2] } : null;
+  return m ? { mode: m[1] === 'v' ? 'view' : 'edit', id: m[2], key } : null;
 }
 
 // Where a shared link should point. Served over the web, that's here; opened
@@ -70,6 +84,16 @@ export function appBase(){
   if (location.protocol === 'http:' || location.protocol === 'https:')
     return location.origin + location.pathname.replace(/\/(index\.html)?$/, '/');
   return APP_BASE.replace(/\/?$/, '/');
+}
+
+// What counts as "changed". Deliberately excludes anything transient (the frame
+// counter, play state) — only the document itself.
+export function signature({ settings, size, photos }){
+  return JSON.stringify({
+    s: settings,
+    z: size,
+    i: photos.map(p => [p.demo ? 'd' + p.demoIndex : p.src, p.on ? 1 : 0])
+  });
 }
 
 export const canPublish = () => true;

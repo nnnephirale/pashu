@@ -132,6 +132,7 @@ function renderStrip(strip, list, onToggle, onRemove){
 }
 const refreshStrips = () => {
   dirty = true;
+  syncSaveBtn();
   // the empty state already says how to add images — don't say it twice
   photoHint.style.display = photos.length ? '' : 'none';
   renderStrip(photoStrip, photos,
@@ -645,6 +646,40 @@ window.addEventListener('keydown', (e) => {
 });
 
 // ── sessions ────────────────────────────────────────────────────────────────
+// A published session owns its URL forever. Opening one puts the app in session
+// mode: edits are live but transient until Save writes them back to the same id.
+let session = null;            // { id, key, sig }
+const docNow = () => ({
+  settings: C.all(),
+  size: { w: canvas.width, h: canvas.height, preset: sizePreset.value },
+  photos
+});
+const isDirty = () => !!session && SESSION.signature(docNow()) !== session.sig;
+
+function markClean(){
+  if (session) session.sig = SESSION.signature(docNow());
+  syncSaveBtn();
+}
+function syncSaveBtn(){
+  const btn = document.getElementById('btnSave');
+  if (!btn) return;
+  const on = !!session && !!session.key;
+  btn.hidden = !on;
+  if (!on) return;
+  const dirty = isDirty();
+  btn.textContent = dirty ? 'Save *' : 'Saved';
+  btn.classList.toggle('dirty', dirty);
+  btn.disabled = !dirty;
+  document.body.classList.toggle('unsaved', dirty);
+}
+C.onAny(() => syncSaveBtn());
+
+// Leaving with unsaved edits throws them away, so say so.
+window.addEventListener('beforeunload', (e) => {
+  if (!isDirty()) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 const shareModal = document.getElementById('shareModal');
 const shareBody = document.getElementById('shareBody');
 const closeShare = () => shareModal.classList.remove('on');
@@ -660,6 +695,21 @@ function urlRow(label, url, note){
     </div>`;
 }
 
+document.getElementById('btnSave').addEventListener('click', async () => {
+  if (!session || !session.key) return;
+  const btn = document.getElementById('btnSave');
+  btn.disabled = true; btn.textContent = 'Saving\u2026';
+  try {
+    await SESSION.save(session.id, session.key, SESSION.serialize(docNow()));
+    C.setBaseline(C.all());          // Reset now returns to what was just saved
+    markClean();
+    toast('Session saved');
+  } catch (err){
+    toast(err.message);
+    syncSaveBtn();
+  }
+});
+
 document.getElementById('btnShare').addEventListener('click', async () => {
   shareBody.innerHTML = `<p class="share-note">Packing session\u2026</p>`;
   shareModal.classList.add('on');
@@ -669,12 +719,18 @@ document.getElementById('btnShare').addEventListener('click', async () => {
       size: { w: canvas.width, h: canvas.height, preset: sizePreset.value },
       photos
     });
-    const { id } = await SESSION.publish(payload);
+    const { id, key } = await SESSION.publish(payload);
+    session = { id, key, sig: SESSION.signature(docNow()) };
+    C.setBaseline(C.all());
+    C.setPersist(false);
+    syncSaveBtn();
     const base = SESSION.appBase();
     shareBody.innerHTML =
-      urlRow('Editable', `${base}?s=${id}`, 'dials open \u00b7 Reset returns to this session') +
+      urlRow('Editable', `${base}?s=${id}&k=${key}`, 'dials open \u00b7 Save writes back here') +
       urlRow('Play only', `${base}?v=${id}`, 'no panel, just the animation') +
-      `<p class="share-note">Anyone with a link can open it. Images are stored as sent.</p>`;
+      `<p class="share-note">These URLs are permanent \u2014 Save updates this session in
+       place rather than making a new one. The editable link carries its edit key,
+       so anyone you send it to can overwrite it; the play-only link cannot.</p>`;
     shareBody.querySelectorAll('[data-copy]').forEach(b =>
       b.addEventListener('click', () => {
         const inp = document.getElementById(b.dataset.copy);
@@ -688,7 +744,7 @@ document.getElementById('btnShare').addEventListener('click', async () => {
   }
 });
 
-async function applySession(sess, mode){
+async function applySession(sess, mode, route){
   // set the layout mode first — fitCanvas measures the stage, which is a
   // different size once the panel is gone
   if (mode === 'view') document.body.classList.add('view-only');
@@ -713,6 +769,10 @@ async function applySession(sess, mode){
   refreshStrips();
   gridKey = ''; resetTimeline();
   fitCanvas();
+  // edits from here are transient until Save
+  C.setPersist(false);
+  session = { id: route.id, key: route.key || '', sig: '' };
+  markClean();
 }
 
 document.getElementById('btnExport').addEventListener('click', () => {
@@ -803,7 +863,7 @@ window.__ps = {
   await addSources(papers, PAPERS, false);
   if (route){
     try {
-      await applySession(await SESSION.load(route.id), route.mode);
+      await applySession(await SESSION.load(route.id), route.mode, route);
     } catch (err){
       toast(err.message);
       await addSources(photos, DEMO, true);

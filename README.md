@@ -45,10 +45,28 @@ canvas size and the images — and returns two links:
   settings rather than the app defaults, because the session is the document.
 - `/v/<id>` — **play only**. No panel, no size bar, canvas fills the window.
 
+**The URLs are permanent.** A session's id never changes. Opening the editable
+link puts the app in session mode:
+
+- Edits are live but **transient**. Nothing is written to localStorage, so
+  closing or reloading without saving discards them and the saved session comes
+  back. The browser warns before you leave with unsaved edits, and the panel
+  carries a rose outline while they're pending.
+- **Save** writes back to the same id, replacing what the links point at. It's
+  disabled until something actually changes, and reads `Save *` when it does.
+- **Reset** returns to the saved session, not the app defaults. After a save,
+  that becomes the new target.
+- **Share** publishes a *new* session; Save updates this one.
+
+Overwriting is gated on an edit key generated at publish time — only its SHA-256
+is stored, and a wrong key is rejected in constant time. The **editable link
+carries the key**, so anyone you send it to can overwrite the session; the
+play-only link cannot. Open the editable link without its key and the dials work
+but Save is hidden.
+
 Demo images are stored by index rather than by bytes (they're already in the
 page), so a demo-only session is a couple of KB. Uploaded images are re-encoded
-to 1800px JPEG before travelling. Sessions are immutable — sharing again makes a
-new id.
+to 1800px JPEG before travelling.
 
 Sharing needs the app served over http(s); from a double-clicked local file the
 button explains that and does nothing.

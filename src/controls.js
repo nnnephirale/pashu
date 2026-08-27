@@ -16,14 +16,19 @@ const sections = [];          // [{ label, keys: [] }]
 const extra = {};             // non-schema state (canvas size)
 let baseline = null;          // a loaded session's values become Reset's target
 let loading = false;
+let persistOn = true;
 
 function readStore(){
   try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
   catch { return {}; }
 }
 let saveTimer = null;
+// While a saved session is open, edits are transient: they must not survive a
+// reload, or "close without saving" would silently keep them.
+export function setPersist(on){ persistOn = !!on; }
+
 function persist(){
-  if (loading) return;
+  if (loading || !persistOn) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try { localStorage.setItem(STORE_KEY, JSON.stringify({ v: state, x: extra })); }
