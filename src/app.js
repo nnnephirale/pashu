@@ -660,16 +660,33 @@ function markClean(){
   if (session) session.sig = SESSION.signature(docNow());
   syncSaveBtn();
 }
+// The footer's primary action must never read "Share" when Save is what's
+// wanted. Three states: no session, a session we can write to, and a session we
+// can only read (an editable link opened without its key, or one published
+// before edit keys existed) — where the honest action is to fork a copy.
 function syncSaveBtn(){
-  const btn = document.getElementById('btnSave');
-  if (!btn) return;
-  const on = !!session && !!session.key;
-  btn.hidden = !on;
-  if (!on) return;
+  const save = document.getElementById('btnSave');
+  const share = document.getElementById('btnShare');
+  if (!save || !share) return;
+  const owned = !!session && !!session.key;
   const dirty = isDirty();
-  btn.textContent = dirty ? 'Save *' : 'Saved';
-  btn.classList.toggle('dirty', dirty);
-  btn.disabled = !dirty;
+
+  save.hidden = !owned;
+  share.hidden = false;
+
+  if (owned){
+    save.textContent = dirty ? 'Save *' : 'Saved';
+    save.classList.toggle('dirty', dirty);
+    save.disabled = !dirty;
+    share.textContent = 'Links';
+    share.title = 'Show this session\u2019s links';
+  } else if (session){
+    share.textContent = 'Save a copy';
+    share.title = 'This link can\u2019t overwrite its session \u2014 publish a new one';
+  } else {
+    share.textContent = 'Share';
+    share.removeAttribute('title');
+  }
   document.body.classList.toggle('unsaved', dirty);
 }
 C.onAny(() => syncSaveBtn());
@@ -710,7 +727,33 @@ document.getElementById('btnSave').addEventListener('click', async () => {
   }
 });
 
+function showLinks(id, key, extraNote){
+  const base = SESSION.appBase();
+  shareBody.innerHTML =
+    urlRow('Editable', `${base}?s=${id}${key ? '&k=' + key : ''}`,
+           key ? 'dials open \u00b7 Save writes back here' : 'dials open \u00b7 cannot overwrite') +
+    urlRow('Play only', `${base}?v=${id}`, 'no panel, just the animation') +
+    `<p class="share-note">${extraNote}</p>`;
+  shareBody.querySelectorAll('[data-copy]').forEach(b =>
+    b.addEventListener('click', () => {
+      const inp = document.getElementById(b.dataset.copy);
+      inp.select();
+      navigator.clipboard.writeText(inp.value).then(() => {
+        b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy'; }, 1600);
+      });
+    }));
+}
+
 document.getElementById('btnShare').addEventListener('click', async () => {
+  // an owned session already has its links — don't mint a second one
+  if (session && session.key){
+    showLinks(session.id, session.key,
+      'These URLs are permanent. Save updates this session in place. The editable ' +
+      'link carries its edit key, so anyone you send it to can overwrite it; the ' +
+      'play-only link cannot.');
+    shareModal.classList.add('on');
+    return;
+  }
   shareBody.innerHTML = `<p class="share-note">Packing session\u2026</p>`;
   shareModal.classList.add('on');
   try {
@@ -723,22 +766,13 @@ document.getElementById('btnShare').addEventListener('click', async () => {
     session = { id, key, sig: SESSION.signature(docNow()) };
     C.setBaseline(C.all());
     C.setPersist(false);
+    // point the address bar at what was just published, so a reload reopens it
+    history.replaceState(null, '', `${location.pathname}?s=${id}&k=${key}`);
     syncSaveBtn();
-    const base = SESSION.appBase();
-    shareBody.innerHTML =
-      urlRow('Editable', `${base}?s=${id}&k=${key}`, 'dials open \u00b7 Save writes back here') +
-      urlRow('Play only', `${base}?v=${id}`, 'no panel, just the animation') +
-      `<p class="share-note">These URLs are permanent \u2014 Save updates this session in
-       place rather than making a new one. The editable link carries its edit key,
-       so anyone you send it to can overwrite it; the play-only link cannot.</p>`;
-    shareBody.querySelectorAll('[data-copy]').forEach(b =>
-      b.addEventListener('click', () => {
-        const inp = document.getElementById(b.dataset.copy);
-        inp.select();
-        navigator.clipboard.writeText(inp.value).then(() => {
-          b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy'; }, 1600);
-        });
-      }));
+    showLinks(id, key,
+      'These URLs are permanent \u2014 Save updates this session in place rather ' +
+      'than making a new one. The editable link carries its edit key, so anyone ' +
+      'you send it to can overwrite it; the play-only link cannot.');
   } catch (err){
     shareBody.innerHTML = `<p class="share-note err">${err.message}</p>`;
   }
