@@ -664,7 +664,16 @@ function markClean(){
 // wanted. Three states: no session, a session we can write to, and a session we
 // can only read (an editable link opened without its key, or one published
 // before edit keys existed) — where the honest action is to fork a copy.
+// In a session, the id IS the document's name — show it instead of the app name.
+function syncTitle(){
+  const h = document.querySelector('.panel-title h1');
+  if (h) h.textContent = session ? session.id : 'Paper Image Shuffle';
+  document.title = session ? `${session.id} \u00b7 Paper Image Shuffle`
+                           : 'Paper Image Shuffle';
+}
+
 function syncSaveBtn(){
+  syncTitle();
   const save = document.getElementById('btnSave');
   const share = document.getElementById('btnShare');
   if (!save || !share) return;

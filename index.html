@@ -95,7 +95,8 @@ canvas{ display:block; max-width:100%; max-height:100%; border-radius:3px; }
   padding:16px 16px 12px;
   border-bottom:1px solid var(--line);
 }
-.panel-title h1{margin:0;font-size:12px;font-weight:500;letter-spacing:.01em}
+.panel-title h1{margin:0;font-size:12px;font-weight:500;letter-spacing:.01em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .panel-title p{margin:3px 0 0;font-size:10px;color:var(--ink-3);letter-spacing:.02em}
 .ghost-btn{
   font:inherit;font-size:10px;color:var(--ink-3);
@@ -1647,7 +1648,7 @@ const SESSION = __m_session;
 
 
 
-const BUILD = '0827-1031';
+const BUILD = '0827-1147';
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const printBuf = document.createElement('canvas');
@@ -2325,7 +2326,16 @@ function markClean(){
 // wanted. Three states: no session, a session we can write to, and a session we
 // can only read (an editable link opened without its key, or one published
 // before edit keys existed) — where the honest action is to fork a copy.
+// In a session, the id IS the document's name — show it instead of the app name.
+function syncTitle(){
+  const h = document.querySelector('.panel-title h1');
+  if (h) h.textContent = session ? session.id : 'Paper Image Shuffle';
+  document.title = session ? `${session.id} \u00b7 Paper Image Shuffle`
+                           : 'Paper Image Shuffle';
+}
+
 function syncSaveBtn(){
+  syncTitle();
   const save = document.getElementById('btnSave');
   const share = document.getElementById('btnShare');
   if (!save || !share) return;
