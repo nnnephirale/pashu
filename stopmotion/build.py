@@ -25,7 +25,7 @@ ASSETS = os.path.join(ROOT, 'assets')
 if not os.path.isdir(ASSETS):
     ASSETS = os.path.abspath(os.path.join(ROOT, os.pardir, 'assets'))
 
-MODULES = ['rng', 'controls', 'paper', 'folds', 'imperfections', 'session', 'app']
+MODULES = ['rng', 'controls', 'paper', 'folds', 'imperfections', 'session', 'cutout', 'app']
 NS = {m: '__m_' + m for m in MODULES}
 
 IMPORT_NAMED = re.compile(r"^import\s*\{([^}]*)\}\s*from\s*'\./(\w+)\.js';?\s*$", re.M)

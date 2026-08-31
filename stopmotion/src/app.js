@@ -4,6 +4,7 @@ import * as P from './paper.js';
 import * as F from './folds.js';
 import * as IMP from './imperfections.js';
 import * as SESSION from './session.js';
+import * as CUT from './cutout.js';
 
 const BUILD = '__BUILD__';
 const canvas = document.getElementById('c');
@@ -48,6 +49,17 @@ const schema = [
       {id:'darken',label:'Darken'},{id:'overlay',label:'Overlay'}] },
   { type:'slider', key:'printOpacity', label:'Print Opacity', min:0, max:1, step:0.01, default:0.94 },
   { type:'slider', key:'printScale', label:'Print Scale', min:0.5, max:2.5, step:0.01, default:1 },
+
+  { type:'section', label:'Collage Cutout', collapsed:false },
+  { type:'toggle', key:'cutout', label:'Cut out subjects', default:true },
+  { type:'toggle', key:'imageBg', label:'Image background', default:false },
+  { type:'slider', key:'subjectScale', label:'Subject Size', min:0.2, max:4, step:0.01, default:0.72 },
+  { type:'slider', key:'subjectX', label:'Position X', min:-1, max:1, step:0.01, default:0 },
+  { type:'slider', key:'subjectY', label:'Position Y', min:-1, max:1, step:0.01, default:0 },
+  { type:'slider', key:'edgeWidth', label:'Paper Edge', min:0, max:40, step:0.5, default:11, unit:'px' },
+  { type:'slider', key:'edgeRough', label:'Edge Tear', min:0, max:1, step:0.02, default:0.6 },
+  { type:'slider', key:'pieceShadow', label:'Cutout Shadow', min:0, max:1, step:0.02, default:0.35 },
+  { type:'buttons', buttons:[{key:'cutoutAll',label:'Cut out all'}] },
 
   { type:'section', label:'Paper & Environment', collapsed:true },
   { type:'custom', render:() => paperStrip },
@@ -154,11 +166,16 @@ async function addSources(list, srcs, demo = false){
 async function addUserPhotos(srcs){
   const hadDemo = photos.some(p => p.demo);
   if (hadDemo) photos = photos.filter(p => !p.demo);
+  const before = photos.length;
   const n = await addSources(photos, srcs, false);
   C.setExtra('demoDismissed', true);
   resetTimeline();
   if (!n) toast('Could not read those files');
   else toast(hadDemo ? `${n} added · placeholders cleared` : `${n} added`);
+  // Uploading is the moment the subject gets cut out — kick it off in the
+  // background so the swap keeps running while the model works.
+  if (C.get('cutout'))
+    for (const p of photos.slice(before)) processCutout(p);
 }
 
 const activePhotos = () => photos.filter(p => p.on);
@@ -320,6 +337,204 @@ function drawBlockPanel(g, b, p, entry, alpha, sc, dx, dy, cw, ch, rotJit = 0){
   pbx.restore();
 }
 
+// ── collage cutout ────────────────────────────────────────────────────────────
+// Cut-out subjects are laid on the paper like scraps of a paper collage: a torn
+// white paper border baked around the subject's silhouette, then a drop shadow
+// when it's placed. The heavy background removal lives in cutout.js; here we
+// only compose what it returns.
+const collageMode = () => !!C.get('cutout') && activePhotos().length > 0;
+
+let cutModelWarned = false;
+async function processCutout(photo){
+  if (!photo || photo.cutout || photo._cutting || photo.cutFailed) return;
+  photo._cutting = true; refreshStrips();
+  try {
+    const { canvas: cut, bbox, coverage } = await CUT.cutout(photo.src, (frac) =>
+      toast(`Loading cutout model… ${Math.round(frac * 100)}%`));
+    // Too little survived the clean-up — there's no clear subject in this image
+    // (a flat scene, a busy layout). Keep the whole image rather than laying
+    // down a torn scrap of noise.
+    if (coverage < 0.012){
+      photo.cutFailed = true;
+      toast('No clear subject — keeping full image');
+    } else {
+      photo.cutout = cut; photo.bbox = bbox; photo.cutFailed = false;
+      photo.cutStamp = (photo.cutStamp || 0) + 1;   // invalidate the piece cache
+      photo._piece = null;
+      toast('Subject cut out');
+    }
+  } catch (err){
+    console.error('cutout failed', err);
+    if (!cutModelWarned){
+      toast('Cutout unavailable (offline?) — showing full image');
+      cutModelWarned = true;
+    }
+  } finally {
+    photo._cutting = false; refreshStrips(); dirty = true;
+  }
+}
+
+async function cutoutAll(){
+  const todo = activePhotos().filter(p => !p.cutout && !p._cutting && !p.cutFailed);
+  if (!todo.length){ toast('Nothing to cut out'); return; }
+  for (const p of todo) await processCutout(p);   // one at a time — one model, shared
+}
+
+const clampi = (v, a, b) => v < a ? a : v > b ? b : v;
+
+// Separable box blur of a single-channel (alpha) field. Used as a cheap
+// distance-from-edge ramp: after blurring, a pixel's value falls off smoothly
+// with how far it sits outside the subject's silhouette.
+function boxBlurAlpha(A, W, H, r){
+  const tmp = new Float32Array(W * H), out = new Float32Array(W * H);
+  const win = 2 * r + 1;
+  for (let y = 0; y < H; y++){
+    const row = y * W; let sum = 0;
+    for (let x = -r; x <= r; x++) sum += A[row + clampi(x, 0, W - 1)];
+    for (let x = 0; x < W; x++){
+      tmp[row + x] = sum / win;
+      sum += A[row + clampi(x + r + 1, 0, W - 1)] - A[row + clampi(x - r, 0, W - 1)];
+    }
+  }
+  for (let x = 0; x < W; x++){
+    let sum = 0;
+    for (let y = -r; y <= r; y++) sum += tmp[clampi(y, 0, H - 1) * W + x];
+    for (let y = 0; y < H; y++){
+      out[y * W + x] = sum / win;
+      sum += tmp[clampi(y + r + 1, 0, H - 1) * W + x] - tmp[clampi(y - r, 0, H - 1) * W + x];
+    }
+  }
+  return out;
+}
+
+// Smooth value noise in [0,1] at a given cell size (smoothstep-interpolated
+// random lattice). Low cell = fine serrations; high cell = slow fat/thin drift.
+function valueNoise(W, H, seed, cell){
+  const gw = Math.ceil(W / cell) + 2, gh = Math.ceil(H / cell) + 2;
+  const g = new Float32Array(gw * gh);
+  for (let i = 0; i < gw * gh; i++) g[i] = hash(seed, i, 17);
+  const out = new Float32Array(W * H);
+  for (let y = 0; y < H; y++){
+    const gy = y / cell, j0 = Math.floor(gy), fy = gy - j0, sy = fy * fy * (3 - 2 * fy);
+    for (let x = 0; x < W; x++){
+      const gx = x / cell, i0 = Math.floor(gx), fx = gx - i0, sx = fx * fx * (3 - 2 * fx);
+      const a = g[j0 * gw + i0], b = g[j0 * gw + i0 + 1];
+      const c = g[(j0 + 1) * gw + i0], d = g[(j0 + 1) * gw + i0 + 1];
+      const top = a + (b - a) * sx, bot = c + (d - c) * sx;
+      out[y * W + x] = top + (bot - top) * sy;
+    }
+  }
+  return out;
+}
+
+// A hand-cut paper backing for the subject in `sub`. Rather than a uniform
+// outline, the white margin follows a blurred version of the silhouette and is
+// kept only where that ramp clears a threshold that DRIFTS along the outline via
+// noise — so the paper sticks out fat in places, sits tight to the subject in
+// others, with the occasional nick, the way a real scissored cut-out looks when
+// it's photographed.
+function paperBacking(sub, W, H, ew, er, seed){
+  const A = new Float32Array(W * H);
+  const src = sub.getContext('2d').getImageData(0, 0, W, H).data;
+  for (let i = 0; i < W * H; i++) A[i] = src[i * 4 + 3];
+
+  const B = boxBlurAlpha(A, W, H, Math.max(1, Math.round(ew)));
+  const nLow = valueNoise(W, H, seed, Math.max(36, ew * 9));       // slow fat/thin sweeps
+  const nHi = valueNoise(W, H, seed * 3 + 1, Math.max(6, ew * 2)); // gentle serration
+
+  const out = new Uint8ClampedArray(W * H * 4);
+  const base = 70;              // ~how far the white sits out from the true edge
+  const amp = 150 * er;         // how wildly the margin wanders (0 = uniform)
+  for (let i = 0; i < W * H; i++){
+    const n = 0.78 * nLow[i] + 0.22 * nHi[i];
+    const t = base + amp * (n - 0.5);
+    out[i * 4] = 246; out[i * 4 + 1] = 242; out[i * 4 + 2] = 232;
+    out[i * 4 + 3] = B[i] >= t ? 255 : 0;
+  }
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  c.getContext('2d').putImageData(new ImageData(out, W, H), 0, 0);
+  return c;
+}
+
+// Bake the subject + torn white border into a standalone canvas, cached per
+// photo and per edge setting. With no cutout yet, the whole image becomes a
+// rectangular paper card so the collage still reads while the model runs.
+function getPiece(photo){
+  const ew = C.get('edgeWidth'), er = C.get('edgeRough');
+  const key = `${ew}|${er}|${photo.cutStamp || 0}`;
+  if (photo._piece && photo._pieceKey === key) return photo._piece;
+
+  const m = Math.ceil(ew * (1 + er) + 6);
+  let W, H, drawSub;
+  if (photo.cutout){
+    const bb = photo.bbox;
+    W = bb.w + 2 * m; H = bb.h + 2 * m;
+    drawSub = (c) => c.drawImage(photo.cutout, m - bb.x, m - bb.y);
+  } else {
+    const im = photo.img, iw = im.naturalWidth || im.width, ih = im.naturalHeight || im.height;
+    W = iw + 2 * m; H = ih + 2 * m;
+    drawSub = (c) => c.drawImage(im, m, m);
+  }
+
+  const piece = document.createElement('canvas');
+  piece.width = W; piece.height = H;
+  const pc = piece.getContext('2d');
+
+  if (ew > 0.5){
+    // draw the subject to its own buffer, read its alpha, grow a torn white
+    // paper backing from it, then lay the subject back on top
+    const seedFor = (photo._seed ||= 1 + Math.floor(Math.random() * 9998));
+    const sub = document.createElement('canvas');
+    sub.width = W; sub.height = H;
+    drawSub(sub.getContext('2d'));
+    pc.drawImage(paperBacking(sub, W, H, ew, er, seedFor), 0, 0);
+  }
+  drawSub(pc);
+
+  photo._piece = piece; photo._pieceKey = key;
+  return piece;
+}
+
+function drawCollage(ctx, cw, ch, seed){
+  const list = activePhotos();
+  if (!list.length) return;
+  const st = segments[0];
+  const idx = clamp(st ? st.cur : 0, 0, list.length - 1);
+  const piece = getPiece(list[idx]);
+  if (!piece) return;
+
+  const entryFrames = C.get('entryFrames'), entryKind = C.get('entry');
+  const since = Math.max(frame - (st ? st.entryAt : 0), 0);
+  const ee = easeOutCubic(entryFrames > 0 ? clamp(since / entryFrames, 0, 1) : 1);
+  let alpha = 1, grow = 1, ex = 0, ey = 0;
+  if (entryKind === 'fade') alpha = ee;
+  else if (entryKind === 'grow'){ alpha = ee; grow = 0.82 + 0.18 * ee; }
+  else if (entryKind === 'slide'){ alpha = Math.min(1, ee * 1.4); ey = (1 - ee) * ch * 0.12; }
+
+  const target = C.get('subjectScale') * Math.min(cw, ch);
+  const s = grow * target / Math.max(piece.width, piece.height);
+  const jx = shash(seed, idx * 3 + frame, 51) * C.get('posJitter');
+  const jy = shash(seed, idx * 3 + frame, 52) * C.get('posJitter');
+  const jr = shash(seed, idx * 5 + frame, 56) * C.get('rotJitter') * Math.PI / 180;
+
+  drawnThisFrame = [[0, idx]];
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const shd = C.get('pieceShadow');
+  if (shd > 0){
+    ctx.shadowColor = `rgba(28,22,18,${0.55 * shd})`;
+    ctx.shadowBlur = 22 * shd * (Math.min(cw, ch) / 1000);
+    ctx.shadowOffsetX = 5 * shd; ctx.shadowOffsetY = 9 * shd;
+  }
+  ctx.translate(cw / 2 + ex + jx + C.get('subjectX') * cw / 2,
+                ch / 2 + ey + jy + C.get('subjectY') * ch / 2);
+  ctx.rotate(jr);
+  ctx.scale(s, s);
+  ctx.drawImage(piece, -piece.width / 2, -piece.height / 2);
+  ctx.restore();
+}
+
 function render(){
   const cw = canvas.width, ch = canvas.height;
   const fps = C.get('fps');
@@ -463,20 +678,31 @@ function render(){
   ctx.rotate(sh.r);
   ctx.translate(-cw/2, -ch/2);
 
+  const collage = collageMode();
+
   ctx.fillStyle = '#EDE9E0';
   ctx.fillRect(0, 0, cw, ch);
   if (paper) P.drawSheet(ctx, paper.img, C.get('paperScale'), cw, ch);
 
-  ctx.save();
-  ctx.globalCompositeOperation = C.get('printBlend');
-  ctx.globalAlpha = C.get('printOpacity');
-  ctx.drawImage(layer, 0, 0);
-  ctx.restore();
+  // Whole-image mode presses the print into the sheet. Collage mode normally
+  // leaves the paper bare under the cut-out subject — but with Image Background
+  // on, the full printed image stays as the backdrop and the (larger) cut-out
+  // sits over it, covering its own original so the subject reads as one figure
+  // lifting off its own scene.
+  if (!collage || C.get('imageBg')){
+    ctx.save();
+    ctx.globalCompositeOperation = C.get('printBlend');
+    ctx.globalAlpha = C.get('printOpacity');
+    ctx.drawImage(layer, 0, 0);
+    ctx.restore();
+  }
 
   if (sampler && paper)
     P.paintPaperLight(ctx, sampler, paper.img,
       { lighting: C.get('paperLighting'), contrast: C.get('lightingContrast'),
         paperScale: C.get('paperScale') }, cw, ch);
+
+  if (collage) drawCollage(ctx, cw, ch, seed);
 
   // No fold grid in this clone — the image fills the sheet, so there are no
   // creases, tone steps or panel lift to bake in.
@@ -626,6 +852,9 @@ syncModeLocks();
 
 C.onChange('reroll', () => C.set('seed', 1 + Math.floor(Math.random() * 9998)));
 C.onChange('resetAll2', resetEverything);
+C.onChange('cutoutAll', cutoutAll);
+// Turning cutout on for the first time processes whatever's already loaded.
+C.onChange('cutout', (on) => { if (on) cutoutAll(); dirty = true; });
 document.getElementById('resetAll').addEventListener('click', resetEverything);
 ['seed','cols','rows','revealOrder','revealStagger','revealDuration','mode','entry']
   .forEach(k => C.onChange(k, resetTimeline));
