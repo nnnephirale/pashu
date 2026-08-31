@@ -1648,7 +1648,7 @@ const SESSION = __m_session;
 
 
 
-const BUILD = '0827-1147';
+const BUILD = '0831-1808';
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const printBuf = document.createElement('canvas');
@@ -1952,6 +1952,21 @@ function assemblyLength(fps){
   for (const b of blocks)
     m = Math.max(m, revealFrameFor(b, grid.cols, grid.rows, blocks.length, fps, C.get('seed')));
   return m + C.get('entryFrames') + 1;
+}
+
+// How many frames make up "one full animation" — the count the PNG export walks.
+// Sequential has an exact period (every image laid down once, then it repeats).
+// Randomized never repeats — it assembles, then jitters forever — so we take the
+// assembly plus a tail of shuffle frames long enough to read as one full cycle.
+function loopLength(){
+  const fps = C.get('fps');
+  if (C.get('mode') === 'sweep'){
+    const n = Math.max(1, activePhotos().length);
+    const cycleLen = blocks.length + C.get('sweepHold');
+    return Math.max(1, n * cycleLen * C.get('tileBeat'));
+  }
+  const tail = Math.max(Math.round(fps * 2), C.get('holdFrames') * 4);
+  return Math.max(1, Math.ceil(assemblyLength(fps)) + tail);
 }
 
 // ── drawing ──────────────────────────────────────────────────────────────────
@@ -2480,15 +2495,97 @@ async function applySession(sess, mode, route){
   markClean();
 }
 
-document.getElementById('btnExport').addEventListener('click', () => {
-  canvas.toBlob(b => {
+// ── PNG export: every frame of one full loop, numbered, in a single .zip ───────
+// Many separate downloads trip the browser's multi-file blocker, so the frames
+// are packed into one store-only zip (PNGs are already compressed) and handed
+// over as a single file.
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++){
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(buf){
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function zipStore(files){
+  const enc = new TextEncoder();
+  const u16 = n => new Uint8Array([n & 255, (n >> 8) & 255]);
+  const u32 = n => new Uint8Array([n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255]);
+  const cat = (...a) => { const o = []; for (const x of a) o.push(...x); return new Uint8Array(o); };
+  const parts = [], central = [];
+  let offset = 0;
+  for (const f of files){
+    const name = enc.encode(f.name);
+    const crc = crc32(f.data), size = f.data.length;
+    const local = cat(u32(0x04034b50), u16(20), u16(0), u16(0), u16(0), u16(0),
+      u32(crc), u32(size), u32(size), u16(name.length), u16(0), name);
+    parts.push(local, f.data);
+    central.push(cat(u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0),
+      u32(crc), u32(size), u32(size), u16(name.length), u16(0), u16(0), u16(0), u16(0),
+      u32(0), u32(offset), name));
+    offset += local.length + size;
+  }
+  let cdSize = 0;
+  for (const c of central){ parts.push(c); cdSize += c.length; }
+  parts.push(cat(u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length),
+    u32(cdSize), u32(offset), u16(0)));
+  return new Blob(parts, { type: 'application/zip' });
+}
+
+let exporting = false;
+document.getElementById('btnExport').addEventListener('click', async () => {
+  if (exporting) return;
+  if (!blocks.length || !activePhotos().length){ toast('Nothing to export yet'); return; }
+  const btn = document.getElementById('btnExport');
+  const label = btn.textContent;
+  exporting = true; btn.disabled = true;
+  const seed = C.get('seed');
+  // Rewind to a clean start, then step frame-by-frame off the render loop.
+  const snap = { playing, frame, accum, paperIndex, segments };
+  playing = false;
+  try {
+    const total = Math.max(1, Math.round(loopLength()));
+    frame = 0; accum = 0; paperIndex = 0; segments = [];
+    // A stop-motion loop holds on the same picture for many beats, so most frames
+    // are byte-for-byte repeats. Keep only frames whose pixels differ from the
+    // last kept one, then number the survivors consecutively.
+    const kept = [];
+    const seen = new Set();
+    for (let i = 0; i < total; i++){
+      if (i > 0) advance();
+      dirty = false; render();
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+      const data = new Uint8Array(await blob.arrayBuffer());
+      const key = crc32(data) + ':' + data.length;
+      if (!seen.has(key)){ seen.add(key); kept.push(data); }
+      btn.textContent = `${i + 1}/${total}`;
+      if ((i & 3) === 0) await new Promise(r => setTimeout(r));   // let the label repaint
+    }
+    const pad = String(kept.length).length;
+    const files = kept.map((data, i) => ({
+      name: `frame_${String(i).padStart(pad, '0')}.png`, data }));
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(b);
-    a.download = `paper-shuffle-${C.get('seed')}-f${frame}.png`;
+    a.href = URL.createObjectURL(zipStore(files));
+    a.download = `paper-shuffle-${seed}.zip`;
     a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-  }, 'image/png');
-  toast('PNG saved');
+    setTimeout(() => URL.revokeObjectURL(a.href), 8000);
+    toast(`${kept.length} frames saved`);
+  } catch (err){
+    console.error(err);
+    toast('Export failed');
+  } finally {
+    // restore the live timeline exactly where it was
+    playing = snap.playing; frame = snap.frame; accum = snap.accum;
+    paperIndex = snap.paperIndex; segments = snap.segments;
+    btn.textContent = label; btn.disabled = false; exporting = false;
+    dirty = true;
+  }
 });
 
 const filePick = document.createElement('input');
