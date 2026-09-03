@@ -167,19 +167,35 @@ async function addSources(list, srcs, demo = false){
 // The demo images are placeholders. The moment the user brings their own, the
 // placeholders go and stay gone — including across refreshes, so a reload never
 // resurrects images they deliberately replaced.
-async function addUserPhotos(srcs){
+async function addUserPhotos(files){
   const hadDemo = photos.some(p => p.demo);
   if (hadDemo) photos = photos.filter(p => !p.demo);
   const before = photos.length;
-  const n = await addSources(photos, srcs, false);
+  let n = 0;
+  for (const f of files){
+    try {
+      const src = URL.createObjectURL(f);
+      const img = await P.loadImage(src);
+      // A GIF is kept as its live, animating <img> and plays whole — no cutout.
+      const entry = { src, img, on: true, demo: false, isGif: f.type === 'image/gif' };
+      photos.push(entry);
+      // Decode the GIF's frames so it can play deterministically on our clock —
+      // a detached <img> doesn't animate reliably. Runs in the background; until
+      // it lands, the first frame (entry.img) shows.
+      if (entry.isGif)
+        decodeGif(f).then(g => { if (g){ entry.gif = g; entry._piece = null; dirty = true; } })
+                    .catch(() => {});
+      n++;
+    } catch { /* skip unreadable files */ }
+  }
+  refreshStrips();
   C.setExtra('demoDismissed', true);
   resetTimeline();
   if (!n) toast('Could not read those files');
   else toast(hadDemo ? `${n} added · placeholders cleared` : `${n} added`);
-  // Uploading is the moment the subject gets cut out — kick it off in the
-  // background so the swap keeps running while the model works.
+  // Cut out the still images (GIFs animate as-is, so they're skipped).
   if (C.get('cutout'))
-    for (const p of photos.slice(before)) processCutout(p);
+    for (const p of photos.slice(before)) if (!p.isGif) processCutout(p);
 }
 
 const activePhotos = () => photos.filter(p => p.on);
@@ -310,7 +326,8 @@ function loopLength(){
 function drawBlockPanel(g, b, p, entry, alpha, sc, dx, dy, cw, ch, rotJit = 0){
   const list = activePhotos();
   if (!list.length) return;
-  const img = list[clamp(entry, 0, list.length - 1)].img;
+  const photo = list[clamp(entry, 0, list.length - 1)];
+  const img = photo.isGif ? currentGifFrame(photo) : photo.img;
   const fit = C.get('imageFit');
   const ps = C.get('printScale');
   pbx.save();
@@ -341,9 +358,47 @@ function drawBlockPanel(g, b, p, entry, alpha, sc, dx, dy, cw, ch, rotJit = 0){
 // only compose what it returns.
 const collageMode = () => !!C.get('cutout') && activePhotos().length > 0;
 
+// Decode an animated GIF into per-frame canvases + cumulative timing, using the
+// browser's ImageDecoder (Chromium/WebKit-recent). Returns null if unsupported
+// or not actually animated, in which case the still first frame is used.
+async function decodeGif(file){
+  if (typeof ImageDecoder === 'undefined') return null;
+  try {
+    const dec = new ImageDecoder({ data: await file.arrayBuffer(), type: 'image/gif' });
+    await dec.tracks.ready;
+    const track = dec.tracks.selectedTrack;
+    const count = track && track.frameCount ? track.frameCount : 0;
+    const frames = [], cum = []; let total = 0;
+    for (let i = 0; count ? i < count : i < 512; i++){
+      let res;
+      try { res = await dec.decode({ frameIndex: i }); }
+      catch { break; }                       // ran past the last frame
+      const img = res.image;
+      const c = document.createElement('canvas');
+      c.width = img.displayWidth || img.codedWidth;
+      c.height = img.displayHeight || img.codedHeight;
+      c.getContext('2d').drawImage(img, 0, 0);
+      total += (img.duration || 100000) / 1000;   // microseconds → ms
+      img.close();
+      frames.push(c); cum.push(total);
+    }
+    dec.close();
+    return frames.length > 1 ? { frames, cum, total } : null;
+  } catch { return null; }
+}
+
+// The GIF frame to show right now, by wall-clock — so it plays at its own speed.
+function currentGifFrame(photo){
+  const g = photo.gif;
+  if (!g || !g.frames.length) return photo.img;
+  const t = performance.now() % g.total;
+  let i = 0; while (i < g.cum.length - 1 && t >= g.cum[i]) i++;
+  return g.frames[i];
+}
+
 let cutModelWarned = false;
 async function processCutout(photo){
-  if (!photo || photo.cutout || photo._cutting || photo.cutFailed) return;
+  if (!photo || photo.cutout || photo._cutting || photo.cutFailed || photo.isGif) return;
   photo._cutting = true; refreshStrips();
   try {
     const { canvas: cut, bbox, coverage } = await CUT.cutout(photo.src, (frac) =>
@@ -460,7 +515,10 @@ function paperBacking(sub, W, H, ew, er, seed){
 function getPiece(photo){
   const ew = C.get('edgeWidth'), er = C.get('edgeRough');
   const key = `${ew}|${er}|${photo.cutStamp || 0}`;
-  if (photo._piece && photo._pieceKey === key) return photo._piece;
+  // A GIF's <img> keeps advancing, so its piece must be rebuilt each frame to
+  // capture the current frame — the torn edge is stable (same seed), only the
+  // content changes. Still images stay cached.
+  if (photo._piece && photo._pieceKey === key && !photo.isGif) return photo._piece;
 
   const m = Math.ceil(ew * (1 + er) + 6);
   let W, H, drawSub;
@@ -469,7 +527,9 @@ function getPiece(photo){
     W = bb.w + 2 * m; H = bb.h + 2 * m;
     drawSub = (c) => c.drawImage(photo.cutout, m - bb.x, m - bb.y);
   } else {
-    const im = photo.img, iw = im.naturalWidth || im.width, ih = im.naturalHeight || im.height;
+    // GIFs draw their current decoded frame; still images draw their <img>.
+    const im = photo.isGif ? currentGifFrame(photo) : photo.img;
+    const iw = im.naturalWidth || im.width, ih = im.naturalHeight || im.height;
     W = iw + 2 * m; H = ih + 2 * m;
     drawSub = (c) => c.drawImage(im, m, m);
   }
@@ -761,6 +821,11 @@ function tick(ts){
     let guard = 0;
     while (accum >= step && guard++ < 8){ accum -= step; advance(); dirty = true; }
     if (guard >= 8) accum = 0;          // tab was backgrounded — don't catch up
+    // If the subject currently on screen is a GIF, redraw every frame so its own
+    // animation plays (only while it's the shown subject, to keep the cost down).
+    const list = activePhotos();
+    const cur = list[clamp(segments[0] ? segments[0].cur : 0, 0, list.length - 1)];
+    if (cur && cur.isGif) dirty = true;
   }
   if (dirty){ dirty = false; render(); }
   requestAnimationFrame(tick);
@@ -1158,7 +1223,7 @@ document.getElementById('btnExport').addEventListener('click', async () => {
 const filePick = document.createElement('input');
 filePick.type = 'file'; filePick.accept = 'image/*'; filePick.multiple = true;
 filePick.addEventListener('change', () => {
-  addUserPhotos([...filePick.files].map(f => URL.createObjectURL(f)));
+  addUserPhotos([...filePick.files]);
   filePick.value = '';
 });
 C.onChange('addPhotos', () => filePick.click());
@@ -1199,7 +1264,7 @@ window.addEventListener('drop', async e => {
   e.preventDefault(); dragDepth = 0; veil.classList.remove('on');
   const files = [...(e.dataTransfer?.files || [])].filter(f => f.type.startsWith('image/'));
   if (!files.length) return;
-  await addUserPhotos(files.map(f => URL.createObjectURL(f)));
+  await addUserPhotos(files);
 });
 
 // Debug handle — the preview pane backgrounds the page, which freezes rAF, so
