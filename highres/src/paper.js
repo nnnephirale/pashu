@@ -13,11 +13,18 @@ const sbx = sampleBuf.getContext('2d', { willReadFrequently: true });
 // URIs are left untouched.
 const LOAD_BUST = Date.now();
 export function loadImage(src){
-  if (/^(\.\.\/)?assets\//.test(src))
-    src += (src.includes('?') ? '&' : '?') + 'v=' + LOAD_BUST;
+  // Only the linked on-disk assets, and only when served over http(s): stamp a
+  // per-load token so an edited PNG shows on refresh, and mark them crossOrigin
+  // so the canvas stays exportable. Over file:// we skip both (a query on a
+  // file URL can break the fetch, and crossOrigin is meaningless there); and we
+  // NEVER set crossOrigin on blob:/data: uploads — that makes some browsers
+  // refuse to decode them ("could not read those files").
+  const isAsset = /^(\.\.\/)?assets\//.test(src);
+  const isHttp = location.protocol.startsWith('http');
+  if (isAsset && isHttp) src += (src.includes('?') ? '&' : '?') + 'v=' + LOAD_BUST;
   return new Promise((res, rej) => {
     const im = new Image();
-    im.crossOrigin = 'anonymous';
+    if (isAsset && isHttp) im.crossOrigin = 'anonymous';
     im.onload = () => res(im);
     im.onerror = rej;
     im.src = src;

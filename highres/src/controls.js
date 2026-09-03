@@ -4,7 +4,10 @@
 // snaps back to the schema defaults and drops the stored copy. Stored values are
 // re-validated against the schema on load, so a stale store from an older build
 // can never brick the panel — anything that doesn't fit is silently dropped.
-const STORE_KEY = 'paperimgshuffle.settings.v1';
+// Namespaced per clone so hi-res settings don't collide with pashu/stopmotion
+// when they're served from the same origin — and so this build's own defaults
+// apply cleanly to anyone who used the shared build before.
+const STORE_KEY = 'paperimgshuffle.highres.settings.v3';
 
 const listeners = {};
 const anyListeners = [];

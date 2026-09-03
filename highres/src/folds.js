@@ -13,9 +13,10 @@ import { hash, shash, fbm1, clamp, lerp } from './rng.js';
 
 const SAMPLES = 26;   // samples per fold line / panel edge
 
-// A fold line is a gently wavering curve, not a straight rule.
+// A fold line is a gently wavering curve, not a straight rule. `waver` is the
+// MAX amplitude — each line takes a random fraction of it.
 function makeLine(seed, idx, salt, nominal, span, waver, skew){
-  const amp = waver * (0.4 + hash(seed, idx, salt) * 1.2);
+  const amp = waver * hash(seed, idx, salt);
   const freq = 0.7 + hash(seed, idx, salt + 5) * 1.3;
   const phase = hash(seed, idx, salt + 9) * 10;
   const tilt = shash(seed, idx, salt + 13) * skew;
@@ -35,26 +36,30 @@ function makeLine(seed, idx, salt, nominal, span, waver, skew){
 
 export function buildGrid(opt){
   const { cols, rows, w, h, seed, gridJitter, foldWaver, foldSkew } = opt;
+  // Geometry (line waver/skew + grid jitter) is seeded separately from panel
+  // identity, so a caller can re-roll the fold shape per frame while keeping the
+  // same panels/grouping. Falls back to `seed` when not supplied.
+  const jseed = opt.jseed === undefined ? seed : opt.jseed;
 
   const vx = [], hy = [];
   for (let i = 0; i <= cols; i++){
     let nx = (i / cols) * w;
-    if (i > 0 && i < cols) nx += shash(seed, i, 41) * gridJitter * (w / cols) * 0.5;
+    if (i > 0 && i < cols) nx += shash(jseed, i, 41) * gridJitter * (w / cols) * 0.5;
     vx.push(nx);
   }
   for (let j = 0; j <= rows; j++){
     let ny = (j / rows) * h;
-    if (j > 0 && j < rows) ny += shash(seed, j, 43) * gridJitter * (h / rows) * 0.5;
+    if (j > 0 && j < rows) ny += shash(jseed, j, 43) * gridJitter * (h / rows) * 0.5;
     hy.push(ny);
   }
 
   // Edge lines don't waver — the sheet's outer boundary is the canvas.
   const vLines = vx.map((x, i) => (i === 0 || i === cols)
     ? { nominal: x, at: () => x, mountain: true, weight: 0, span: h }
-    : makeLine(seed, i, 101, x, h, foldWaver, foldSkew));
+    : makeLine(jseed, i, 101, x, h, foldWaver, foldSkew));
   const hLines = hy.map((y, j) => (j === 0 || j === rows)
     ? { nominal: y, at: () => y, mountain: true, weight: 0, span: w }
-    : makeLine(seed, j, 211, y, w, foldWaver, foldSkew));
+    : makeLine(jseed, j, 211, y, w, foldWaver, foldSkew));
 
   // corner (i,j) — one fixed-point pass is plenty, deviations are a few px
   const cornerX = [], cornerY = [];
@@ -91,7 +96,7 @@ export function buildGrid(opt){
     }
   }
 
-  return { vLines, hLines, cornerX, cornerY, panels, cols, rows, w, h, seed };
+  return { vLines, hLines, cornerX, cornerY, panels, cols, rows, w, h, seed, jseed };
 }
 
 // Panel outline, following the wavering folds, optionally torn.
@@ -191,7 +196,7 @@ function strokeFold(c, line, vertical, w, h, nx, ny, o){
 export function buildFoldLayers(grid, o){
   const { w, h, seed, vLines, hLines, panels } = grid;
   const { tone, highlight, shadow, width, softness, variance, lift, lightAngle } = o;
-  const key = [w, h, grid.cols, grid.rows, seed, tone, highlight, shadow,
+  const key = [w, h, grid.cols, grid.rows, seed, grid.jseed, tone, highlight, shadow,
                width, softness, variance, lift, lightAngle].join('|');
   if (cache.key === key) return cache;
 

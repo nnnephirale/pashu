@@ -28,7 +28,7 @@ photoHint.className = 'hint';
 photoHint.textContent = 'Click to mute · drag images anywhere to add';
 
 const schema = [
-  { type:'segmented', key:'mode', label:'', default:'both', cls:'mode-bar', options:[
+  { type:'segmented', key:'mode', label:'', default:'sweep', cls:'mode-bar', options:[
       {id:'both',label:'Randomized'},{id:'sweep',label:'Sequential'}] },
 
   { type:'section', label:'Images', collapsed:false },
@@ -50,34 +50,35 @@ const schema = [
   { type:'slider', key:'printScale', label:'Print Scale', min:0.5, max:2.5, step:0.01, default:1 },
   { type:'slider', key:'coverage', label:'Coverage', min:0, max:1, step:0.01, default:1 },
 
+  // Cells stay an even, fixed grid — the width/height-changing controls
+  // (grid jitter, fold waver, fold skew) are gone so every piece is evenly cut
+  // and evenly split at all times, like a true stop-motion. Offset/rotate only
+  // nudge/turn each piece (never resize it), and stay constant through the run.
   { type:'section', label:'Segments', collapsed:false },
   { type:'number', key:'cols', label:'Columns', min:1, max:12, step:1, default:3 },
   { type:'number', key:'rows', label:'Rows', min:1, max:12, step:1, default:4 },
-  { type:'slider', key:'gridJitter', label:'Grid Jitter', min:0, max:1, step:0.01, default:0.18 },
-  { type:'slider', key:'foldWaver', label:'Fold Waver', min:0, max:12, step:0.1, default:2.2, unit:'px' },
-  { type:'slider', key:'foldSkew', label:'Fold Skew', min:0, max:20, step:0.5, default:4, unit:'px' },
-  { type:'slider', key:'tear', label:'Edge Tear', min:0, max:6, step:0.1, default:0.6, unit:'px' },
-  { type:'slider', key:'panelOffset', label:'Panel Offset', min:0, max:24, step:0.5, default:7, unit:'px' },
-  { type:'slider', key:'panelRotate', label:'Panel Rotate', min:0, max:2.5, step:0.05, default:0.25, unit:'°' },
+  { type:'slider', key:'tear', label:'Edge Tear', min:0, max:6, step:0.1, default:1, unit:'px' },
+  { type:'slider', key:'panelOffset', label:'Panel Offset', min:0, max:24, step:0.5, default:0, unit:'px' },
+  { type:'slider', key:'panelRotate', label:'Panel Rotate', min:0, max:2.5, step:0.05, default:0.30, unit:'°' },
+  { type:'toggle', key:'basePeek', label:'Show previous image as layer', default:true },
   { type:'slider', key:'grouping', label:'Grouping', min:0, max:1, step:0.02, default:0.35 },
   { type:'number', key:'groupCap', label:'Max Block', min:1, max:12, step:1, default:4 },
 
   { type:'section', label:'Fold & Depth', collapsed:false },
-  { type:'slider', key:'panelTone', label:'Panel Tone', min:0, max:1, step:0.01, default:0.5 },
-  { type:'slider', key:'creaseHighlight', label:'Ridge Light', min:0, max:2, step:0.02, default:1.1 },
-  { type:'slider', key:'creaseShadow', label:'Ridge Shadow', min:0, max:2, step:0.02, default:0.10 },
-  { type:'slider', key:'creaseWidth', label:'Ridge Width', min:0.3, max:8, step:0.1, default:1.6, unit:'px' },
+  { type:'slider', key:'panelTone', label:'Panel Tone', min:0, max:1, step:0.01, default:0.26 },
+  { type:'slider', key:'creaseHighlight', label:'Ridge Light', min:0, max:2, step:0.02, default:0.18 },
+  { type:'slider', key:'creaseShadow', label:'Ridge Shadow', min:0, max:2, step:0.02, default:0.22 },
+  { type:'slider', key:'creaseWidth', label:'Ridge Width', min:0.3, max:8, step:0.1, default:0.7, unit:'px' },
   { type:'slider', key:'creaseSoft', label:'Ridge Softness', min:0, max:2, step:0.02, default:0.32 },
-  { type:'slider', key:'creaseVary', label:'Ridge Variance', min:0, max:1, step:0.02, default:0.5 },
-  { type:'slider', key:'panelLift', label:'Panel Lift', min:0, max:2, step:0.02, default:1.3 },
+  { type:'slider', key:'creaseVary', label:'Ridge Variance', min:0, max:1, step:0.02, default:0.14 },
+  { type:'slider', key:'panelLift', label:'Panel Lift', min:0, max:2, step:0.02, default:1.0 },
   { type:'slider', key:'lightAngle', label:'Light Angle', min:0, max:360, step:1, default:305, unit:'°' },
 
   { type:'section', label:'Paper & Environment', collapsed:true },
   { type:'custom', render:() => paperStrip },
-  { type:'segmented', key:'paperSwapMode', label:'Swap', default:'random', options:[
-      {id:'sequential',label:'Sequential'},{id:'random',label:'Random'},{id:'hold',label:'Hold'}] },
+  { type:'segmented', key:'paperSwapMode', label:'Paper', default:'perimage', options:[
+      {id:'single',label:'One Paper'},{id:'perimage',label:'Per Image'}] },
   { type:'slider', key:'paperScale', label:'Paper Scale', min:0.5, max:3, step:0.05, default:1.15 },
-  { type:'slider', key:'paperDistortion', label:'Paper Distortion', min:0, max:3, step:0.05, default:0.9 },
   { type:'slider', key:'paperLighting', label:'Paper Lighting', min:0, max:2, step:0.05, default:0.85 },
   { type:'slider', key:'lightingContrast', label:'Lighting Contrast', min:0, max:2, step:0.05, default:1 },
 
@@ -109,6 +110,11 @@ const schema = [
 ];
 
 C.build(schema, document.getElementById('controls'));
+
+// The grid-geometry controls are removed in this build — pin them off so the
+// grid is an even, fixed tessellation (no per-frame size/shape change).
+for (const k of ['gridJitter', 'foldWaver', 'foldSkew']) C.set(k, 0);
+
 C.onAny(() => { dirty = true; });
 
 // ── image handling ───────────────────────────────────────────────────────────
@@ -124,6 +130,10 @@ function renderStrip(strip, list, onToggle, onRemove){
   list.forEach((it, i) => {
     const d = document.createElement('div');
     d.className = 'thumb' + (it.on ? '' : ' off');
+    // Hover shows the on-disk filename (e.g. paper_3.png) so it's clear which
+    // base file to edit. Only meaningful for the linked assets, not uploads.
+    const file = /\/assets\//.test(it.src) ? it.src.split('?')[0].split('/').pop() : '';
+    if (file) d.title = file;
     d.innerHTML = `<img src="${it.src}" alt=""><span class="x">×</span>`;
     d.querySelector('.x').addEventListener('click', (e) => { e.stopPropagation(); onRemove(i); });
     d.addEventListener('click', () => onToggle(i));
@@ -224,15 +234,9 @@ function revealFrameFor(p, cols, rows, total, fps, seed){
 function advance(){
   frame++;
   const seed = C.get('seed');
-  const ap = activePapers();
-  const mode = C.get('paperSwapMode');
-  if (ap.length > 1 && mode !== 'hold'){
-    if (mode === 'random'){
-      let next = Math.floor(mulberry32((seed + frame * 131) >>> 0)() * ap.length);
-      if (next === paperIndex) next = (next + 1) % ap.length;
-      paperIndex = next;
-    } else paperIndex = frame % ap.length;
-  } else if (ap.length <= 1) paperIndex = 0;
+  // Paper selection now happens in render() — "One Paper" holds; "Per Image"
+  // picks a fresh paper (from the un-muted choices) whenever the shown image
+  // changes. See render().
 
   // segment shuffling
   const n = activePhotos().length;
@@ -301,10 +305,27 @@ function loopLength(){
   if (C.get('mode') === 'sweep'){
     const n = Math.max(1, activePhotos().length);
     const cycleLen = blocks.length + C.get('sweepHold');
-    return Math.max(1, n * cycleLen * C.get('tileBeat'));
+    const step = C.get('entry') === 'snap'
+      ? Math.max(1, C.get('tileBeat'))
+      : Math.max(1, C.get('tileBeat'), C.get('entryFrames'));
+    return Math.max(1, n * cycleLen * step);
   }
   const tail = Math.max(Math.round(fps * 2), C.get('holdFrames') * 4);
   return Math.max(1, Math.ceil(assemblyLength(fps)) + tail);
+}
+
+// Which image is on screen right now — used so "Per Image" paper changes in step
+// with the picture. Sequential: the sweep's current cycle. Randomized: the first
+// block's current image.
+function currentImageId(){
+  if (C.get('mode') === 'sweep'){
+    const tileBeat = C.get('tileBeat');
+    const step = C.get('entry') === 'snap'
+      ? Math.max(1, tileBeat) : Math.max(1, tileBeat, C.get('entryFrames'));
+    const cycleLen = Math.max(1, blocks.length + C.get('sweepHold'));
+    return Math.floor(Math.floor(frame / step) / cycleLen);
+  }
+  return segments[0] ? segments[0].cur : 0;
 }
 
 // ── drawing ──────────────────────────────────────────────────────────────────
@@ -320,6 +341,7 @@ function drawBlockPanel(g, b, p, entry, alpha, sc, dx, dy, cw, ch, rotJit = 0){
   // Clip first and the image merely slides under a fixed window — every tile
   // then reads as one rigid sheet. Moving both is what makes each tile look
   // like its own scrap of paper, with the small gaps and overlaps to match.
+  // Rotation and tear are FIXED per panel (constant through the animation).
   pbx.translate(p.cx + dx, p.cy + dy);
   pbx.rotate((p.rot * C.get('panelRotate') + rotJit) * Math.PI / 180);
   pbx.scale(sc, sc);
@@ -347,12 +369,14 @@ function render(){
   const sweepMode = runMode === 'sweep';
   const grouping = sweepMode ? 0 : C.get('grouping');
   const groupCap = sweepMode ? 1 : C.get('groupCap');
-  const key = [cols, rows, cw, ch, seed, C.get('gridJitter'), C.get('foldWaver'),
-               C.get('foldSkew'), grouping, groupCap,
+  // The grid is a fixed, even tessellation — built once and reused (jitter,
+  // waver and skew are pinned to 0), so cells never change size through the run.
+  const gj = C.get('gridJitter'), fw = C.get('foldWaver'), fs = C.get('foldSkew');
+  const key = [cols, rows, cw, ch, seed, gj, fw, fs, grouping, groupCap,
                sweepMode ? 'reading' : C.get('revealOrder')].join('|');
   if (key !== gridKey){
     grid = F.buildGrid({ cols, rows, w: cw, h: ch, seed,
-      gridJitter: C.get('gridJitter'), foldWaver: C.get('foldWaver'), foldSkew: C.get('foldSkew') });
+      gridJitter: gj, foldWaver: fw, foldSkew: fs });
     blocks = F.buildBlocks(grid, seed, grouping, groupCap);
     assignSweepRanks();
     gridKey = key;
@@ -361,7 +385,17 @@ function render(){
 
   const lightAngle = C.get('lightAngle') * Math.PI / 180;
   const ap = activePapers();
-  const paper = ap.length ? ap[Math.min(paperIndex, ap.length - 1)] : null;
+  // Paper: "One Paper" holds on the current (first un-muted) sheet; "Per Image"
+  // maps each shown image to one of the un-muted papers, so the sheet changes
+  // whenever the image does. Index is into the active (un-muted) list.
+  if (ap.length){
+    if (C.get('paperSwapMode') === 'perimage'){
+      const imgId = currentImageId();
+      paperIndex = Math.floor(hash(seed, imgId + 1, 55) * ap.length) % ap.length;
+    }
+    paperIndex = Math.min(paperIndex, ap.length - 1);
+  }
+  const paper = ap.length ? ap[paperIndex] : null;
   const sampler = samplerFor(paper);
 
   // ---- printed layer -------------------------------------------------------
@@ -372,6 +406,7 @@ function render(){
   const entryKind = C.get('entry');
   const posJ = C.get('posJitter'), rotJ = C.get('rotJitter');
   const pOff = C.get('panelOffset');
+  const basePeek = C.get('basePeek');
 
   const coverage = runMode === 'sweep' ? 1 : C.get('coverage');
   const covered = (b) => coverage >= 0.999 || hash(seed, b.id, 111) <= coverage;
@@ -382,13 +417,21 @@ function render(){
     // One image lays itself down tile by tile in strict order. Only when the
     // LAST tile has landed (plus a hold) does the next image start over the top.
     const n = activePhotos().length;
+    // ONE segment animates in at a time: each tile occupies enough frames for its
+    // whole entry to finish before the next tile starts. Snap needs only tileBeat.
     const tileBeat = C.get('tileBeat');
+    const step = entryKind === 'snap'
+      ? Math.max(1, tileBeat) : Math.max(1, tileBeat, entryFrames);
     const cycleLen = blocks.length + C.get('sweepHold');
-    const tick = Math.floor(frame / tileBeat);
+    const tick = Math.floor(frame / step);
     let cycle = Math.floor(tick / cycleLen);
     let pos = tick % cycleLen;
     // Settle on the final image rather than wrapping when Loop is off
     if (!C.get('loop') && n > 1 && cycle >= n - 1){ cycle = n - 2; pos = cycleLen; }
+
+    // The previously-completed image, laid flat and frozen under everything, so
+    // the gaps left as a tile jitters or animates in reveal it instead of paper.
+    const baseImg = ((cycle % n) + n) % n;
 
     for (const b of blocks){
       if (!covered(b)) continue;
@@ -400,9 +443,9 @@ function render(){
       drawnThisFrame.push([b.rank, img]);
       if (trace) drawn.push([b.rank, img]);
 
-      const landedAt = ((laid ? cycle : cycle - 1) * cycleLen + b.rank) * tileBeat;
+      const landedAt = ((laid ? cycle : cycle - 1) * cycleLen + b.rank) * step;
       const since = Math.max(frame - landedAt, 0);
-      const ef = Math.min(entryFrames, tileBeat);
+      const ef = entryKind === 'snap' ? 0 : entryFrames;
       const e = ef > 0 ? clamp(since / ef, 0, 1) : 1;
       const ee = easeOutCubic(e);
 
@@ -420,6 +463,10 @@ function render(){
         const jx = shash(seed, p.idx * 3 + frame, 51) * posJ;
         const jy = shash(seed, p.idx * 3 + frame, 52) * posJ;
         const jr = shash(seed, p.idx * 5 + frame, 56) * rotJ;
+        // frozen base fills this cell first — no jitter, no entry — then the
+        // current tile animates/jitters over it, so every gap reveals an image
+        if (basePeek)
+          drawBlockPanel(grid, b, p, baseImg, 1, 1, p.offX * pOff, p.offY * pOff, cw, ch, 0);
         drawBlockPanel(grid, b, p, img, alpha, sc,
           p.offX * pOff + ex + jx, p.offY * pOff + ey + jy, cw, ch, jr);
       }
@@ -451,21 +498,22 @@ function render(){
 
     drawnThisFrame.push([b.rank, st.cur]);
     if (trace) drawn.push([b.rank, st.cur]);
+    // the image this tile last held, laid flat and frozen underneath
+    const baseImg = st.prev >= 0 ? st.prev : st.cur;
     for (const p of b.panels){
       const jx = shash(seed, p.idx * 3 + frame, 51) * posJ;
       const jy = shash(seed, p.idx * 3 + frame, 52) * posJ;
       const jr = shash(seed, p.idx * 5 + frame, 56) * rotJ;
+      if (basePeek)
+        drawBlockPanel(grid, b, p, baseImg, 1, 1, p.offX * pOff, p.offY * pOff, cw, ch, 0);
       drawBlockPanel(grid, b, p, st.cur, alpha, sc,
         p.offX * pOff + ex + jx, p.offY * pOff + ey + jy, cw, ch, jr);
     }
   }
   }
 
-  // press the print into the sheet
+  // press the print into the sheet (paper distortion removed in this build)
   let layer = printBuf;
-  const distort = C.get('paperDistortion');
-  if (sampler && paper && distort > 0.001)
-    layer = P.reliefWarp(layer, sampler, paper.img, distort, C.get('paperScale'), cw, ch);
   const uneven = C.get('unevenness');
   if (uneven > 0.001)
     layer = IMP.applyPrintWear(layer, { unevenness: uneven, seed }, cw, ch);
@@ -545,7 +593,10 @@ function status(){
   let extra = '';
   if (C.get('mode') === 'sweep' && blocks.length && activePhotos().length){
     const cycleLen = blocks.length + C.get('sweepHold');
-    const tick = Math.floor(frame / C.get('tileBeat'));
+    const step = C.get('entry') === 'snap'
+      ? Math.max(1, C.get('tileBeat'))
+      : Math.max(1, C.get('tileBeat'), C.get('entryFrames'));
+    const tick = Math.floor(frame / step);
     const pos = Math.min(blocks.length, tick % cycleLen);
     extra = ` · tile ${pos}/${blocks.length}`;
   }
