@@ -1810,7 +1810,7 @@ const CUT = __m_cutout;
 
 
 
-const BUILD = '0903-1936';
+const BUILD = '0903-2021';
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const printBuf = document.createElement('canvas');
@@ -2210,13 +2210,14 @@ async function decodeGif(file){
   } catch { return null; }
 }
 
-// The GIF frame to show right now, by wall-clock — so it plays at its own speed.
+// The GIF frame to show right now. Advanced one frame per stop-motion BEAT (in
+// order, looping) — so it reads as stop-motion, like flipping through uploaded
+// stills, rather than smooth video. Freezes when the animation is paused.
 function currentGifFrame(photo){
   const g = photo.gif;
   if (!g || !g.frames.length) return photo.img;
-  const t = performance.now() % g.total;
-  let i = 0; while (i < g.cum.length - 1 && t >= g.cum[i]) i++;
-  return g.frames[i];
+  const n = g.frames.length;
+  return g.frames[((frame % n) + n) % n];
 }
 
 let cutModelWarned = false;
@@ -2644,11 +2645,6 @@ function tick(ts){
     let guard = 0;
     while (accum >= step && guard++ < 8){ accum -= step; advance(); dirty = true; }
     if (guard >= 8) accum = 0;          // tab was backgrounded — don't catch up
-    // If the subject currently on screen is a GIF, redraw every frame so its own
-    // animation plays (only while it's the shown subject, to keep the cost down).
-    const list = activePhotos();
-    const cur = list[clamp(segments[0] ? segments[0].cur : 0, 0, list.length - 1)];
-    if (cur && cur.isGif) dirty = true;
   }
   if (dirty){ dirty = false; render(); }
   requestAnimationFrame(tick);
