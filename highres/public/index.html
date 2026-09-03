@@ -1,0 +1,2691 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper Hi-Res</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg-a:#FAFAF8; --bg-b:#F2F1ED;
+  --surface:#FFFFFF;
+  --ink:#1C1A17; --ink-2:#6B665F; --ink-3:#A8A29A;
+  --line:rgba(0,0,0,0.04);
+  --line-2:rgba(0,0,0,0.07);
+  --fill:#EFEDE8;
+  --fill-2:#E4E1DA;
+  --accent:#8C8578;
+  --rose:#B4746E;
+  --r-lg:20px; --r-md:14px; --r-sm:9px;
+  --ease:cubic-bezier(0.16,1,0.3,1);
+  --shadow-soft:0 1px 2px rgba(28,26,23,.04), 0 6px 16px rgba(28,26,23,.05), 0 24px 48px rgba(28,26,23,.05);
+  --panel-w:332px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-weight:300;
+  font-size:12px;
+  color:var(--ink);
+  background:linear-gradient(160deg,var(--bg-a) 0%,var(--bg-b) 100%);
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ---------- stage ---------- */
+.stage{
+  position:fixed; inset:0 var(--panel-w) 0 0;
+  display:flex; align-items:center; justify-content:center;
+  padding:44px 40px 76px;
+}
+.canvas-wrap{
+  position:relative;
+  border-radius:4px;
+  box-shadow:0 2px 6px rgba(28,26,23,.06), 0 18px 44px rgba(28,26,23,.10), 0 44px 90px rgba(28,26,23,.06);
+  line-height:0;
+  transition:box-shadow .5s var(--ease);
+}
+canvas{ display:block; max-width:100%; max-height:100%; border-radius:3px; }
+
+.size-bar{
+  position:absolute; left:50%; bottom:20px; transform:translateX(-50%);
+  display:flex; align-items:center; gap:4px;
+  padding:6px 8px;
+  background:rgba(255,255,255,.72);
+  backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+  border:1px solid var(--line); border-radius:999px;
+  box-shadow:var(--shadow-soft);
+  opacity:0; transform:translateX(-50%) translateY(6px);
+  transition:opacity .35s var(--ease), transform .35s var(--ease);
+}
+.stage:hover .size-bar{opacity:1; transform:translateX(-50%) translateY(0)}
+.size-bar label{display:flex;align-items:center;gap:5px;color:var(--ink-3);padding-left:8px}
+.size-bar input{
+  width:52px; border:0; background:transparent; font:inherit; color:var(--ink-3);
+  text-align:center; padding:4px 2px; border-radius:var(--r-sm);
+  transition:color .2s var(--ease), background .2s var(--ease);
+}
+.size-bar input:hover{background:var(--fill)}
+.size-bar input:focus{outline:0;color:var(--ink);background:var(--fill)}
+.size-bar select{
+  border:0;background:transparent;font:inherit;color:var(--ink-3);
+  padding:4px 6px;border-radius:var(--r-sm);cursor:pointer;
+}
+.size-bar select:hover{background:var(--fill);color:var(--ink)}
+.size-bar input::-webkit-outer-spin-button,
+.size-bar input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+
+/* ---------- panel ---------- */
+.panel{
+  position:fixed; top:14px; right:14px; bottom:14px; width:calc(var(--panel-w) - 28px);
+  display:flex; flex-direction:column;
+  background:rgba(255,255,255,.86);
+  backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+  border:1px solid var(--line);
+  border-radius:var(--r-lg);
+  box-shadow:var(--shadow-soft);
+  overflow:hidden;
+}
+.panel-head{
+  display:flex; align-items:flex-start; justify-content:space-between; gap:10px;
+  padding:16px 16px 12px;
+  border-bottom:1px solid var(--line);
+}
+.panel-title h1{margin:0;font-size:12px;font-weight:500;letter-spacing:.01em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.panel-title p{margin:3px 0 0;font-size:10px;color:var(--ink-3);letter-spacing:.02em}
+.ghost-btn{
+  font:inherit;font-size:10px;color:var(--ink-3);
+  background:transparent;border:1px solid transparent;
+  padding:4px 8px;border-radius:var(--r-sm);cursor:pointer;
+  transition:all .25s var(--ease);
+}
+.ghost-btn:hover{color:var(--rose);border-color:rgba(180,116,110,.28)}
+.ghost-btn:active{transform:scale(.97)}
+
+.panel-body{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:4px 0 16px}
+.panel-body::-webkit-scrollbar{width:8px}
+.panel-body::-webkit-scrollbar-thumb{background:var(--fill-2);border-radius:99px;border:2px solid transparent;background-clip:padding-box}
+.panel-body::-webkit-scrollbar-thumb:hover{background:#D6D2C9;background-clip:padding-box}
+
+.panel-foot{
+  display:flex;gap:6px;padding:10px 12px;
+  border-top:1px solid var(--line);
+  background:rgba(255,255,255,.5);
+}
+.pbtn{
+  flex:1;font:inherit;font-size:11px;color:var(--ink-2);
+  background:var(--fill);border:1px solid var(--line);
+  padding:8px 6px;border-radius:var(--r-sm);cursor:pointer;
+  transition:all .25s var(--ease);
+}
+.pbtn:hover{background:var(--fill-2);color:var(--ink)}
+.pbtn:active{transform:scale(.98)}
+
+.pbtn.save{flex:0 0 auto;padding-left:12px;padding-right:12px}
+.pbtn.save:disabled{opacity:.5;cursor:default}
+.pbtn.save.dirty{
+  color:var(--rose);border-color:rgba(180,116,110,.3);background:rgba(180,116,110,.07);
+}
+.pbtn.save.dirty:hover{background:rgba(180,116,110,.12)}
+/* a quiet standing reminder that leaving now discards the edits */
+body.unsaved .panel{box-shadow:var(--shadow-soft),0 0 0 1px rgba(180,116,110,.25)}
+
+/* ---------- sections ---------- */
+.section{border-bottom:1px solid var(--line)}
+.section:last-child{border-bottom:0}
+.section-head{
+  position:relative;
+  display:flex;align-items:center;
+}
+/* the toggle fills the row — click anywhere on the header to collapse */
+.section-toggle{
+  flex:1;display:flex;align-items:center;justify-content:space-between;gap:10px;
+  font:inherit;font-size:11px;font-weight:400;letter-spacing:.04em;
+  color:var(--ink-2);background:transparent;border:0;
+  padding:13px 16px;cursor:pointer;text-align:left;
+  transition:color .25s var(--ease);
+}
+.section-toggle:hover{color:var(--ink)}
+.chev{
+  flex:none;width:8px;height:8px;
+  border-right:1px solid currentColor;border-bottom:1px solid currentColor;
+  transform:rotate(45deg) translate(-2px,-2px);
+  transition:transform .3s var(--ease);opacity:.5;
+}
+.section.open .chev{transform:rotate(225deg) translate(-1px,-1px)}
+/* floats over the toggle rather than sitting beside it, so it can't
+   punch a dead zone in the header's hit area */
+.section-reset{
+  position:absolute;right:34px;top:50%;transform:translateY(-50%);
+  font:inherit;font-size:12px;line-height:1;
+  color:var(--ink-3);background:var(--surface);
+  border:1px solid var(--line-2);border-radius:var(--r-sm);
+  padding:4px 7px;cursor:pointer;
+  transition:color .25s var(--ease),border-color .25s var(--ease),
+             background .25s var(--ease);
+}
+.section-reset:hover{color:var(--rose);border-color:rgba(180,116,110,.35);background:rgba(180,116,110,.05)}
+.section-reset:active{transform:translateY(-50%) scale(.94)}
+.section-reset:focus-visible{outline:1px solid var(--rose);outline-offset:1px}
+.section-body{display:none;padding:0 16px 14px}
+.section.open .section-body{display:block}
+
+/* ---------- rows ---------- */
+.row{margin:0 0 6px}
+.row:last-child{margin-bottom:0}
+
+/* slider: filled background row, scrub anywhere */
+.slider{
+  position:relative;display:flex;align-items:center;justify-content:space-between;
+  gap:8px;height:30px;padding:0 10px;border-radius:var(--r-sm);
+  background:var(--fill);overflow:hidden;cursor:ew-resize;
+  user-select:none;-webkit-user-select:none;touch-action:none;
+  transition:background .25s var(--ease);
+}
+.slider:hover{background:var(--fill-2)}
+.slider .fill{
+  position:absolute;left:0;top:0;bottom:0;width:0;
+  background:#DEDAD1;pointer-events:none;
+  transition:background .25s var(--ease);
+}
+.slider:hover .fill{background:#D4CFC4}
+.slider.dragging .fill{background:#CBC5B8}
+.slider .lab,.slider .val{position:relative;pointer-events:none;white-space:nowrap}
+.slider .lab{color:var(--ink-2);font-weight:300}
+.slider .val{color:var(--ink-3);font-variant-numeric:tabular-nums;transition:color .2s var(--ease)}
+.slider:hover .val{color:var(--ink)}
+
+/* locked: forced to an effective value by the current mode. Reads as inert
+   rather than broken — no scrub cursor, no hover lift, value dimmed. */
+.slider.locked{cursor:default;background:rgba(0,0,0,.018)}
+.slider.locked:hover{background:rgba(0,0,0,.018)}
+.slider.locked .fill{background:#E7E4DD}
+.slider.locked:hover .fill{background:#E7E4DD}
+.slider.locked .lab,.slider.locked .val{color:var(--ink-3);opacity:.6}
+.slider.locked::after{
+  content:"";position:absolute;right:0;top:0;bottom:0;width:2px;
+  background:repeating-linear-gradient(135deg,rgba(0,0,0,.10) 0 2px,transparent 2px 4px);
+}
+.sel.locked{opacity:.45}
+.sel.locked select{cursor:default}
+.seg.locked{opacity:.45}
+.seg.locked .seg-group button{cursor:default}
+.num.locked{opacity:.5}
+.num.locked input{cursor:default}
+.num.locked input:hover{background:transparent}
+
+/* plain inline number */
+.num{display:flex;align-items:center;justify-content:space-between;gap:8px;height:30px;padding:0 10px}
+.num label{color:var(--ink-2)}
+.num input{
+  width:62px;border:0;background:transparent;font:inherit;color:var(--ink-3);
+  text-align:right;padding:4px 6px;border-radius:var(--r-sm);
+  font-variant-numeric:tabular-nums;
+  transition:color .2s var(--ease),background .2s var(--ease);
+}
+.num input:hover{background:var(--fill)}
+.num input:focus{outline:0;color:var(--ink);background:var(--fill)}
+.num input::-webkit-outer-spin-button,.num input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+
+/* inline toggle */
+.tog{display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;cursor:pointer;border-radius:var(--r-sm);transition:background .25s var(--ease)}
+.tog:hover{background:var(--fill)}
+.tog input{appearance:none;-webkit-appearance:none;margin:0;width:13px;height:13px;border:1px solid var(--line-2);border-radius:4px;background:var(--surface);cursor:pointer;position:relative;transition:all .2s var(--ease);flex:none}
+.tog input:checked{background:var(--accent);border-color:var(--accent)}
+.tog input:checked::after{content:"";position:absolute;left:4px;top:1px;width:3px;height:7px;border-right:1.5px solid #fff;border-bottom:1.5px solid #fff;transform:rotate(42deg)}
+.tog span{color:var(--ink-2)}
+
+/* mode toggle — the top-level choice, so it sits above every section */
+.row.mode-bar{
+  margin:0;padding:12px 16px;
+  border-bottom:1px solid var(--line);
+  background:rgba(0,0,0,.012);
+}
+.row.mode-bar .seg{padding:0;min-height:0}
+.row.mode-bar .seg>span{display:none}
+.row.mode-bar .seg-group{flex:1;padding:3px}
+.row.mode-bar .seg-group button{flex:1;font-size:11px;padding:7px 8px;letter-spacing:.02em}
+
+/* segmented */
+.seg{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 10px 4px 10px;min-height:30px}
+.seg>span{color:var(--ink-2);white-space:nowrap}
+.seg-group{display:flex;background:var(--fill);border-radius:var(--r-sm);padding:2px;gap:2px}
+.seg-group button{
+  font:inherit;font-size:10px;color:var(--ink-3);background:transparent;border:0;
+  padding:5px 9px;border-radius:6px;cursor:pointer;white-space:nowrap;
+  transition:all .25s var(--ease);
+}
+.seg-group button:hover{color:var(--ink)}
+.seg-group button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(28,26,23,.06)}
+
+/* select */
+.sel{display:flex;align-items:center;justify-content:space-between;gap:8px;height:30px;padding:0 6px 0 10px}
+.sel label{color:var(--ink-2)}
+.sel select{
+  font:inherit;font-size:11px;color:var(--ink-2);background:var(--fill);
+  border:1px solid transparent;border-radius:var(--r-sm);padding:5px 8px;cursor:pointer;
+  transition:all .25s var(--ease);
+}
+.sel select:hover{background:var(--fill-2);color:var(--ink)}
+.sel select:focus{outline:0;border-color:var(--line-2)}
+
+/* button row */
+.btnrow{display:flex;gap:6px;padding:4px 10px}
+.btnrow button{
+  flex:1;font:inherit;font-size:10px;color:var(--ink-2);background:var(--fill);
+  border:1px solid var(--line);padding:7px 6px;border-radius:var(--r-sm);cursor:pointer;
+  transition:all .25s var(--ease);
+}
+.btnrow button:hover{background:var(--fill-2);color:var(--ink)}
+.btnrow button:active{transform:scale(.98)}
+.btnrow button.danger{background:transparent;border-color:rgba(180,116,110,.25);color:var(--rose)}
+.btnrow button.danger:hover{background:rgba(180,116,110,.06)}
+
+/* thumbs */
+.thumbs{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;padding:6px 10px 2px}
+.thumb{
+  position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;
+  border:1px solid var(--line);background:var(--fill);cursor:pointer;
+  transition:transform .3s var(--ease),box-shadow .3s var(--ease),opacity .25s var(--ease);
+}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb:hover{transform:translateY(-3px);box-shadow:0 4px 10px rgba(28,26,23,.12)}
+.thumb.off{opacity:.28}
+.thumb .x{
+  position:absolute;top:1px;right:1px;width:13px;height:13px;border-radius:4px;
+  background:rgba(255,255,255,.9);color:var(--rose);font-size:10px;line-height:13px;text-align:center;
+  opacity:0;transition:opacity .2s var(--ease);
+}
+.thumb:hover .x{opacity:1}
+.hint{padding:4px 10px 0;font-size:10px;color:var(--ink-3);letter-spacing:.01em;line-height:1.5}
+.strip-empty{
+  grid-column:1 / -1;
+  display:flex;align-items:center;justify-content:center;
+  min-height:52px;padding:0 10px;text-align:center;
+  font-size:10px;line-height:1.5;color:var(--ink-3);
+  border:1px dashed var(--line-2);border-radius:var(--r-sm);
+  background:rgba(0,0,0,.012);
+}
+
+/* share modal */
+.modal{
+  position:fixed;inset:0;z-index:70;display:none;
+  align-items:center;justify-content:center;padding:24px;
+  background:rgba(0,0,0,.4);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+}
+.modal.on{display:flex}
+.modal-card{
+  width:min(520px,100%);background:var(--surface);
+  border-radius:var(--r-lg);border:1px solid var(--line);
+  box-shadow:0 8px 24px rgba(0,0,0,.18),0 40px 90px rgba(0,0,0,.16);
+  overflow:hidden;
+}
+.modal-card header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 18px 14px;border-bottom:1px solid var(--line);
+}
+.modal-card h2{margin:0;font-size:12px;font-weight:500;letter-spacing:.02em}
+.modal-card header button{
+  font:inherit;font-size:16px;line-height:1;color:var(--ink-3);
+  background:transparent;border:0;cursor:pointer;padding:2px 4px;
+  transition:color .25s var(--ease);
+}
+.modal-card header button:hover{color:var(--ink)}
+#shareBody{padding:14px 18px 18px}
+.url-row{margin-bottom:14px}
+.url-label{font-size:11px;color:var(--ink);margin-bottom:6px}
+.url-label span{color:var(--ink-3);margin-left:8px;font-size:10px}
+.url-box{display:flex;gap:6px}
+.url-box input{
+  flex:1;min-width:0;font:inherit;font-size:11px;color:var(--ink-2);
+  background:var(--fill);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:8px 10px;
+}
+.url-box input:focus{outline:0;border-color:var(--line-2);color:var(--ink)}
+.url-box button{
+  font:inherit;font-size:11px;color:var(--ink-2);background:var(--fill);
+  border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 14px;cursor:pointer;
+  transition:all .25s var(--ease);
+}
+.url-box button:hover{background:var(--fill-2);color:var(--ink)}
+.share-note{margin:8px 0 0;font-size:10px;line-height:1.6;color:var(--ink-3)}
+.share-note.err{color:var(--rose)}
+
+/* play-only: the canvas is the whole page */
+body.view-only .panel,
+body.view-only .size-bar{display:none}
+body.view-only .stage{inset:0;padding:0}
+body.view-only .canvas-wrap{border-radius:0;box-shadow:none}
+
+/* drop veil + toast */
+.drop-veil{
+  position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.4);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:50;
+}
+.drop-veil.on{display:flex}
+.drop-veil span{
+  background:#fff;color:var(--ink);padding:18px 30px;border-radius:var(--r-lg);
+  box-shadow:0 8px 24px rgba(0,0,0,.18),0 32px 80px rgba(0,0,0,.14);letter-spacing:.04em;
+}
+.toast{
+  position:fixed;left:50%;bottom:26px;transform:translate(-50%,10px);
+  display:flex;align-items:center;gap:12px;
+  background:rgba(28,26,23,.9);color:#F5F3EF;font-size:11px;letter-spacing:.02em;
+  padding:8px 8px 8px 16px;border-radius:999px;backdrop-filter:blur(12px);
+  opacity:0;pointer-events:none;transition:opacity .4s var(--ease),transform .4s var(--ease);z-index:60;
+}
+.toast.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.toast button{
+  font:inherit;font-size:11px;color:#E8A9A3;background:transparent;
+  border:1px solid rgba(232,169,163,.3);border-radius:999px;
+  padding:4px 12px;cursor:pointer;
+  transition:background .25s var(--ease),color .25s var(--ease);
+}
+.toast button:hover{background:rgba(232,169,163,.14);color:#F3C6C1}
+.toast button:active{transform:scale(.97)}
+.toast button[hidden]{display:none}
+
+@media (max-width:900px){
+  :root{--panel-w:0px}
+  .stage{inset:0 0 46vh 0;padding:16px}
+  .panel{top:auto;left:8px;right:8px;bottom:8px;width:auto;height:calc(46vh - 16px)}
+}
+
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="c"></canvas>
+  </div>
+  <div class="size-bar" id="sizeBar">
+    <label>W <input type="number" id="sizeW" value="1080" min="120" max="4000" step="10"></label>
+    <label>H <input type="number" id="sizeH" value="1920" min="120" max="4000" step="10"></label>
+    <select id="sizePreset">
+      <option value="custom">Custom</option>
+      <option value="900x1200">3:4 Portrait</option>
+      <option value="1080x1920" selected>9:16 Story</option>
+      <option value="1080x1080">1:1 Square</option>
+      <option value="1600x1000">16:10 Wide</option>
+    </select>
+  </div>
+</div>
+
+<aside class="panel" id="panel">
+  <header class="panel-head">
+    <div class="panel-title">
+      <h1>Paper Hi-Res</h1>
+      <p id="statusLine">loading</p>
+    </div>
+    <button class="ghost-btn" id="resetAll" title="Reset all controls">Reset</button>
+  </header>
+  <div class="panel-body" id="controls"></div>
+  <footer class="panel-foot">
+    <button class="pbtn" id="btnReplay">Replay</button>
+    <button class="pbtn" id="btnPlay">Pause</button>
+    <button class="pbtn" id="btnExport">PNG</button>
+    <button class="pbtn" id="btnShare">Share</button>
+    <button class="pbtn save" id="btnSave" hidden>Saved</button>
+  </footer>
+</aside>
+
+<div class="drop-veil" id="dropVeil"><span>Drop images</span></div>
+<div class="modal" id="shareModal">
+  <div class="modal-card">
+    <header><h2>Share this session</h2><button id="shareClose" aria-label="Close">&times;</button></header>
+    <div id="shareBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="toastMsg"></span><button id="toastUndo" hidden>Undo</button></div>
+
+<script>
+const __m_rng = (function(){
+
+// Seeded, reproducible randomness. Same seed => same sheet, forever.
+function mulberry32(a){
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Stateless hash: one deterministic value per (seed, index, salt) triple.
+function hash(seed, i, salt){
+  return mulberry32((seed * 374761393 + i * 668265263 + salt * 2246822519) >>> 0)();
+}
+
+// Signed variant, -1..1
+function shash(seed, i, salt){ return hash(seed, i, salt) * 2 - 1; }
+
+// Smooth 1D value noise — used for variation ALONG a crease so the highlight
+// breathes instead of running at one constant weight.
+function noise1(seed, salt, t){
+  const i = Math.floor(t), f = t - i;
+  const a = hash(seed, i, salt), b = hash(seed, i + 1, salt);
+  const u = f * f * (3 - 2 * f);
+  return a + (b - a) * u;
+}
+
+// Fractal version — two octaves is enough to stop it reading as a sine wave.
+function fbm1(seed, salt, t){
+  return noise1(seed, salt, t) * 0.65 + noise1(seed, salt + 977, t * 2.7) * 0.35;
+}
+
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeInOutCubic = (t) => t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2;
+const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+return { mulberry32, hash, shash, noise1, fbm1, clamp, lerp, easeInOutCubic, easeOutCubic };
+})();
+
+const __m_controls = (function(){
+
+// Control panel: builds the UI from a schema and owns the state.
+//
+// Settings survive a refresh via localStorage; Reset (per section or global)
+// snaps back to the schema defaults and drops the stored copy. Stored values are
+// re-validated against the schema on load, so a stale store from an older build
+// can never brick the panel — anything that doesn't fit is silently dropped.
+const STORE_KEY = 'paperimgshuffle.settings.v1';
+
+const listeners = {};
+const anyListeners = [];
+const state = {};
+const defaults = {};
+const specs = {};
+const els = {};
+const sections = [];          // [{ label, keys: [] }]
+const extra = {};             // non-schema state (canvas size)
+let baseline = null;          // a loaded session's values become Reset's target
+let loading = false;
+let persistOn = true;
+
+function readStore(){
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
+  catch { return {}; }
+}
+let saveTimer = null;
+// While a saved session is open, edits are transient: they must not survive a
+// reload, or "close without saving" would silently keep them.
+function setPersist(on){ persistOn = !!on; }
+
+function persist(){
+  if (loading || !persistOn) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify({ v: state, x: extra })); }
+    catch { /* private mode / quota — settings just won't persist */ }
+  }, 250);
+}
+function clearStore(){
+  clearTimeout(saveTimer);
+  try { localStorage.removeItem(STORE_KEY); } catch {}
+}
+
+// A stored value is only accepted if it still fits its spec.
+function coerce(spec, v){
+  switch (spec.type){
+    case 'slider': case 'number':
+      // strict: Number(null) is 0 and Number(true) is 1, both of which would
+      // sail through a bare isFinite check and silently become real settings
+      if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
+      return Math.max(spec.min, Math.min(spec.max, v));
+    case 'toggle':
+      return typeof v === 'boolean' ? v : undefined;
+    case 'select': case 'segmented':
+      return spec.options.some(o => o.id === v) ? v : undefined;
+    default:
+      return undefined;
+  }
+}
+
+function getExtra(k){ return extra[k]; }
+function setExtra(k, v){ extra[k] = v; persist(); }
+function snapshot(){ return { ...state }; }
+
+// When a saved session is opened, Reset should return to THAT session's
+// settings, not to the app defaults — the session is the document.
+function setBaseline(obj){ baseline = obj ? { ...obj } : null; }
+function hasBaseline(){ return !!baseline; }
+const targetFor = (k) => (baseline && k in baseline) ? baseline[k] : defaults[k];
+function restore(snap){ for (const k in snap) set(k, snap[k]); }
+
+function get(k){ return state[k]; }
+function set(k, v, silent){
+  if (state[k] === v) return;
+  state[k] = v;
+  if (els[k] && els[k].sync) els[k].sync(v);
+  anyListeners.forEach(fn => fn(k, v));
+  if (!silent && listeners[k]) listeners[k].forEach(fn => fn(v));
+  persist();
+}
+function onChange(k, fn){ (listeners[k] ||= []).push(fn); }
+// Fires for every control — the render loop uses it to know the frame is stale.
+function onAny(fn){ anyListeners.push(fn); }
+
+// Force a control to an effective value and stop it being edited, without
+// destroying what the user had set. Used where one mode makes another control
+// meaningless — locking says so out loud instead of silently ignoring it.
+function setLocked(key, on, shown, reason){
+  const e = els[key];
+  if (e && e.setLocked) e.setLocked(on, shown, reason);
+}
+function all(){ return { ...state }; }
+// Reset always goes to the schema defaults — the original, very first values —
+// never to whatever was last stored.
+function resetAll(){
+  clearStore();
+  for (const k in defaults) set(k, targetFor(k));
+}
+function resetSection(label){
+  const sec = sections.find(s => s.label === label);
+  if (!sec) return;
+  for (const k of sec.keys) set(k, targetFor(k));
+}
+function sectionKeys(label){
+  const sec = sections.find(s => s.label === label);
+  return sec ? sec.keys.slice() : [];
+}
+
+const fmt = (v, step) => {
+  if (step >= 1) return String(Math.round(v));
+  const d = String(step).split('.')[1]?.length || 2;
+  return v.toFixed(d);
+};
+
+function sliderRow(spec){
+  const wrap = document.createElement('div');
+  wrap.className = 'row';
+  wrap.innerHTML =
+    `<div class="slider"><div class="fill"></div>
+       <span class="lab">${spec.label}</span><span class="val"></span></div>`;
+  const el = wrap.firstElementChild;
+  const fill = el.querySelector('.fill');
+  const val = el.querySelector('.val');
+  const { min, max, step } = spec;
+
+  // A locked control displays the value actually in force, not the stored one.
+  // The stored value is untouched, so leaving the locking mode restores it.
+  let lockedTo = null;
+  const sync = (v) => {
+    const d = lockedTo !== null ? lockedTo : v;
+    fill.style.width = ((d - min) / (max - min) * 100) + '%';
+    val.textContent = fmt(d, step) + (spec.unit || '');
+  };
+  els[spec.key] = {
+    sync,
+    setLocked(on, shown, reason){
+      lockedTo = on ? shown : null;
+      el.classList.toggle('locked', !!on);
+      if (on) el.title = reason || ''; else el.removeAttribute('title');
+      sync(state[spec.key]);
+    }
+  };
+
+  // Scrub anywhere on the row — the whole row is the track.
+  let dragging = false;
+  const fromX = (clientX) => {
+    const r = el.getBoundingClientRect();
+    const t = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    const raw = min + t * (max - min);
+    return Math.round(raw / step) * step;
+  };
+  el.addEventListener('pointerdown', (e) => {
+    if (lockedTo !== null) return;
+    dragging = true;
+    try { el.setPointerCapture(e.pointerId); } catch {}
+    el.classList.add('dragging');
+    set(spec.key, fromX(e.clientX));
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (dragging && lockedTo === null) set(spec.key, fromX(e.clientX));
+  });
+  const end = () => { dragging = false; el.classList.remove('dragging'); };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+  return wrap;
+}
+
+function numRow(spec){
+  const wrap = document.createElement('div');
+  wrap.className = 'row';
+  wrap.innerHTML = `<div class="num"><label>${spec.label}</label>
+    <input type="number" min="${spec.min}" max="${spec.max}" step="${spec.step || 1}"></div>`;
+  const input = wrap.querySelector('input');
+  let lockedTo = null;
+  els[spec.key] = {
+    sync: (v) => {
+      if (document.activeElement !== input) input.value = lockedTo !== null ? lockedTo : v;
+    },
+    setLocked(on, shown, reason){
+      lockedTo = on ? shown : null;
+      input.disabled = !!on;
+      wrap.querySelector('.num').classList.toggle('locked', !!on);
+      if (on) wrap.querySelector('.num').title = reason || '';
+      else wrap.querySelector('.num').removeAttribute('title');
+      els[spec.key].sync(state[spec.key]);
+    }
+  };
+  const commit = () => {
+    if (lockedTo !== null) return;
+    let v = parseFloat(input.value);
+    if (!isFinite(v)) v = defaults[spec.key];
+    v = Math.max(spec.min, Math.min(spec.max, v));
+    input.value = v;
+    set(spec.key, v);
+  };
+  input.addEventListener('change', commit);
+  input.addEventListener('blur', commit);
+  return wrap;
+}
+
+function togRow(spec){
+  const wrap = document.createElement('div');
+  wrap.className = 'row';
+  wrap.innerHTML = `<label class="tog"><input type="checkbox"><span>${spec.label}</span></label>`;
+  const input = wrap.querySelector('input');
+  els[spec.key] = { sync: (v) => { input.checked = !!v; } };
+  input.addEventListener('change', () => set(spec.key, input.checked));
+  return wrap;
+}
+
+function segRow(spec){
+  const wrap = document.createElement('div');
+  wrap.className = 'row';
+  const g = spec.options.map(o => `<button data-v="${o.id}">${o.label}</button>`).join('');
+  wrap.innerHTML = `<div class="seg"><span>${spec.label}</span><div class="seg-group">${g}</div></div>`;
+  const btns = [...wrap.querySelectorAll('button')];
+  let lockedTo = null;
+  els[spec.key] = {
+    sync: (v) => {
+      const d = lockedTo !== null ? lockedTo : v;
+      btns.forEach(b => b.classList.toggle('on', b.dataset.v === d));
+    },
+    setLocked(on, shown, reason){
+      lockedTo = on ? shown : null;
+      const g = wrap.querySelector('.seg');
+      g.classList.toggle('locked', !!on);
+      if (on) g.title = reason || ''; else g.removeAttribute('title');
+      els[spec.key].sync(state[spec.key]);
+    }
+  };
+  btns.forEach(b => b.addEventListener('click', () => {
+    if (lockedTo !== null) return;
+    set(spec.key, b.dataset.v);
+  }));
+  return wrap;
+}
+
+function selRow(spec){
+  const wrap = document.createElement('div');
+  wrap.className = 'row';
+  const opts = spec.options.map(o => `<option value="${o.id}">${o.label}</option>`).join('');
+  wrap.innerHTML = `<div class="sel"><label>${spec.label}</label><select>${opts}</select></div>`;
+  const sel = wrap.querySelector('select');
+  let lockedTo = null;
+  els[spec.key] = {
+    sync: (v) => { sel.value = lockedTo !== null ? lockedTo : v; },
+    setLocked(on, shown, reason){
+      lockedTo = on ? shown : null;
+      sel.disabled = !!on;
+      wrap.querySelector('.sel').classList.toggle('locked', !!on);
+      if (on) wrap.querySelector('.sel').title = reason || '';
+      else wrap.querySelector('.sel').removeAttribute('title');
+      els[spec.key].sync(state[spec.key]);
+    }
+  };
+  sel.addEventListener('change', () => { if (lockedTo === null) set(spec.key, sel.value); });
+  return wrap;
+}
+
+function btnRow(spec){
+  const wrap = document.createElement('div');
+  wrap.className = 'row';
+  const b = spec.buttons.map(x =>
+    `<button data-k="${x.key}" class="${x.danger ? 'danger' : ''}">${x.label}</button>`).join('');
+  wrap.innerHTML = `<div class="btnrow">${b}</div>`;
+  wrap.querySelectorAll('button').forEach(btn =>
+    btn.addEventListener('click', () => (listeners[btn.dataset.k] || []).forEach(fn => fn())));
+  return wrap;
+}
+
+function customRow(spec){
+  const wrap = document.createElement('div');
+  wrap.className = 'row';
+  wrap.appendChild(spec.render());
+  return wrap;
+}
+
+function hintRow(spec){
+  const wrap = document.createElement('div');
+  wrap.className = 'hint';
+  wrap.textContent = spec.text;
+  return wrap;
+}
+
+const builders = { slider: sliderRow, number: numRow, toggle: togRow,
+  segmented: segRow, select: selRow, buttons: btnRow, custom: customRow, hint: hintRow };
+
+function build(schema, root){
+  let body = null, current = null;
+  for (const spec of schema){
+    if (spec.type === 'section'){
+      current = { label: spec.label, keys: [] };
+      sections.push(current);
+      // `sec` must be a per-iteration binding: a shared outer `let` would leave
+      // every header's listener closing over the LAST section, so all of them
+      // toggle the same panel.
+      const sec = document.createElement('div');
+      sec.className = 'section' + (spec.collapsed ? '' : ' open');
+      // One button spans the whole row so the entire header is the hit target;
+      // the reset floats over it on the right. Splitting the row into separate
+      // buttons left dead zones between them.
+      sec.innerHTML =
+        `<div class="section-head">
+           <button class="section-toggle"><span>${spec.label}</span><i class="chev"></i></button>
+           <button class="section-reset" title="Reset ${spec.label}" aria-label="Reset ${spec.label}">&#8635;</button>
+         </div>
+         <div class="section-body"></div>`;
+      body = sec.querySelector('.section-body');
+      const toggle = sec.querySelector('.section-toggle');
+      toggle.setAttribute('aria-expanded', String(!spec.collapsed));
+      toggle.addEventListener('click', () => {
+        const open = sec.classList.toggle('open');
+        toggle.setAttribute('aria-expanded', String(open));
+      });
+      const label = spec.label;
+      sec.querySelector('.section-reset').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const before = snapshot();
+        resetSection(label);
+        resetNotify(label, before);
+      });
+      root.appendChild(sec);
+      continue;
+    }
+    if (spec.key !== undefined && spec.default !== undefined){
+      defaults[spec.key] = spec.default;
+      state[spec.key] = spec.default;
+      specs[spec.key] = spec;
+      if (current) current.keys.push(spec.key);
+    }
+    const node = (builders[spec.type] || (() => document.createElement('div')))(spec);
+    if (spec.cls) node.classList.add(spec.cls);
+    (body || root).appendChild(node);
+    if (spec.key && els[spec.key]) els[spec.key].sync(state[spec.key]);
+  }
+
+  // Apply anything stored from a previous visit. Runs before app.js registers
+  // its listeners, which is what we want at boot — nothing to invalidate yet.
+  const stored = readStore();
+  loading = true;
+  for (const k in (stored.v || {})){
+    const spec = specs[k];
+    if (!spec) continue;
+    const v = coerce(spec, stored.v[k]);
+    if (v !== undefined) set(k, v);
+  }
+  Object.assign(extra, stored.x || {});
+  loading = false;
+}
+
+// Reset is instant and non-blocking, with an undo rather than a confirmation.
+let notify = () => {};
+function onReset(fn){ notify = fn; }
+function resetNotify(label, before){ notify(label, before); }
+
+return { setPersist, getExtra, setExtra, snapshot, setBaseline, hasBaseline, restore, get, set, onChange, onAny, setLocked, all, resetAll, resetSection, sectionKeys, build, onReset };
+})();
+
+const __m_paper = (function(){
+const { clamp } = __m_rng;
+// Paper sheet: loading, per-sheet relief/lighting sampler, and the passes that
+// press the printed image into the sheet.
+
+const SAMPLE_W = 220;
+const sampleBuf = document.createElement('canvas');
+const sbx = sampleBuf.getContext('2d', { willReadFrequently: true });
+
+// Hi-res build only: assets are linked from disk, not embedded. Browsers cache
+// images hard, so a plain refresh would keep showing the OLD paper after you
+// edit the PNG. Stamp on-disk asset URLs with a per-page-load token so every
+// refresh refetches — edits show up immediately. Uploads (blob:) and any data:
+// URIs are left untouched.
+const LOAD_BUST = Date.now();
+function loadImage(src){
+  if (/^(\.\.\/)?assets\//.test(src))
+    src += (src.includes('?') ? '&' : '?') + 'v=' + LOAD_BUST;
+  return new Promise((res, rej) => {
+    const im = new Image();
+    im.crossOrigin = 'anonymous';
+    im.onload = () => res(im);
+    im.onerror = rej;
+    im.src = src;
+  });
+}
+
+// Precompute once per sheet: luminance, Sobel gradients, mean, and the 90th
+// percentile as the "paper white" reference.
+function buildSampler(img){
+  if (!img || !img.complete || !img.naturalWidth) return null;
+  const ar = img.naturalWidth / img.naturalHeight;
+  let sw = SAMPLE_W, sh = SAMPLE_W;
+  if (ar >= 1) sh = Math.max(8, Math.round(SAMPLE_W / ar));
+  else sw = Math.max(8, Math.round(SAMPLE_W * ar));
+  sampleBuf.width = sw; sampleBuf.height = sh;
+  sbx.clearRect(0, 0, sw, sh);
+  try {
+    sbx.drawImage(img, 0, 0, sw, sh);
+    const data = sbx.getImageData(0, 0, sw, sh).data;
+    const n = sw * sh;
+    const lum = new Float32Array(n);
+    const hist = new Float32Array(64);
+    let mean = 0;
+    for (let i = 0; i < n; i++){
+      const p = i * 4;
+      const l = (0.299 * data[p] + 0.587 * data[p+1] + 0.114 * data[p+2]) / 255;
+      lum[i] = l; mean += l;
+      hist[Math.min(63, (l * 64) | 0)]++;
+    }
+    mean /= n;
+    let acc = 0, hi = 1;
+    for (let b = 0; b < 64; b++){ acc += hist[b]; if (acc >= n * 0.9){ hi = (b + 0.5) / 64; break; } }
+    const gx = new Float32Array(n), gy = new Float32Array(n);
+    const at = (x, y) => lum[clamp(y,0,sh-1) * sw + clamp(x,0,sw-1)];
+    let gmax = 1e-4;
+    for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++){
+      const i = y * sw + x;
+      gx[i] = (at(x+1,y-1)+2*at(x+1,y)+at(x+1,y+1)) - (at(x-1,y-1)+2*at(x-1,y)+at(x-1,y+1));
+      gy[i] = (at(x-1,y+1)+2*at(x,y+1)+at(x+1,y+1)) - (at(x-1,y-1)+2*at(x,y-1)+at(x+1,y-1));
+      const m = Math.hypot(gx[i], gy[i]);
+      if (m > gmax) gmax = m;
+    }
+    return { w: sw, h: sh, lum, gx, gy, mean, hi, gmax };
+  } catch { return null; }
+}
+
+// canvas pixel -> paper uv, accounting for the cover-fit crop
+function frameToPaperUV(fx, fy, img, scale, cw, ch){
+  const sw = cw * scale, sh = ch * scale;
+  const ox = (cw - sw) / 2, oy = (ch - sh) / 2;
+  let u = (fx - ox) / sw, v = (fy - oy) / sh;
+  const iar = (img.naturalWidth || img.width) / (img.naturalHeight || img.height);
+  const dar = sw / sh;
+  if (iar > dar) u = 0.5 + (u - 0.5) * (dar / iar);
+  else           v = 0.5 + (v - 0.5) * (iar / dar);
+  return [u, v];
+}
+
+function sampleAt(s, u, v){
+  const x = clamp((u * s.w) | 0, 0, s.w - 1);
+  const y = clamp((v * s.h) | 0, 0, s.h - 1);
+  const i = y * s.w + x;
+  return { lum: s.lum[i], gx: s.gx[i], gy: s.gy[i] };
+}
+
+function drawCover(ctx, img, x, y, w, h){
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  const ir = iw / ih;
+  const dr = w / h;
+  let sw, sh, sx, sy;
+  if (ir > dr){ sh = ih; sw = sh * dr; sx = (iw - sw) / 2; sy = 0; }
+  else        { sw = iw; sh = sw / dr; sx = 0; sy = (ih - sh) / 2; }
+  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
+
+function drawSheet(ctx, img, scale, cw, ch){
+  const sw = cw * scale, sh = ch * scale;
+  drawCover(ctx, img, (cw - sw) / 2, (ch - sh) / 2, sw, sh);
+}
+
+// ── pressing the print into the sheet ────────────────────────────────────────
+// Grid warp: the printed layer is re-blitted as a lattice, each cell nudged
+// along the paper's local gradient. This is what makes ink ride the relief
+// instead of floating flat on top of it.
+let warpBuf = null, wbx = null;
+function reliefWarp(src, sampler, img, amount, paperScale, cw, ch){
+  if (!sampler || !img || amount <= 0.001) return src;
+  if (!warpBuf){ warpBuf = document.createElement('canvas'); wbx = warpBuf.getContext('2d'); }
+  if (warpBuf.width !== cw || warpBuf.height !== ch){ warpBuf.width = cw; warpBuf.height = ch; }
+  wbx.clearRect(0, 0, cw, ch);
+
+  // cell size scales with the sheet so a big canvas doesn't cost 3000 blits
+  const CELL = Math.max(26, Math.round(Math.hypot(cw, ch) / 44));
+  const maxShift = amount * 3.2;
+  const nx = Math.ceil(cw / CELL), ny = Math.ceil(ch / CELL);
+  for (let j = 0; j < ny; j++){
+    for (let i = 0; i < nx; i++){
+      const sx = i * CELL, sy = j * CELL;
+      const wgt = Math.min(CELL, cw - sx), hgt = Math.min(CELL, ch - sy);
+      if (wgt <= 0 || hgt <= 0) continue;
+      const [u, v] = frameToPaperUV(sx + wgt / 2, sy + hgt / 2, img, paperScale, cw, ch);
+      const s = sampleAt(sampler, u, v);
+      const g = Math.hypot(s.gx, s.gy);
+      let dx = 0, dy = 0;
+      if (g > 1e-5){
+        const k = Math.min(1, (g / sampler.gmax) * 2.2);
+        dx = (s.gx / g) * maxShift * k;
+        dy = (s.gy / g) * maxShift * k;
+      }
+      // 1px bleed keeps the lattice from showing as a seam grid
+      wbx.drawImage(src, sx, sy, wgt, hgt, sx + dx - 0.5, sy + dy - 0.5, wgt + 1, hgt + 1);
+    }
+  }
+  return warpBuf;
+}
+
+// The sheet's own shadows darken whatever is printed on it. Rather than
+// per-cell fills (blocky, slow) we bake a SHADE MAP per sheet: the paper
+// renormalised so its own paper-white sits at mid grey. Composited with
+// 'overlay', mid grey is a no-op, so only the sheet's deviations — creases,
+// stains, fibre — press through into the print. Re-derived per swap, so the
+// print re-lights every time the paper changes.
+const shadeCache = new WeakMap();
+function buildShadeMap(img, sampler, contrast){
+  const key = Math.round(contrast * 20);
+  let per = shadeCache.get(img);
+  if (per && per.key === key) return per.canvas;
+
+  const sw = sampler.w, sh = sampler.h;
+  const cv = document.createElement('canvas');
+  cv.width = sw; cv.height = sh;
+  const cx = cv.getContext('2d');
+  const out = cx.createImageData(sw, sh);
+  const d = out.data;
+  const k = 255 * (0.75 + contrast * 1.15);
+  const ref = sampler.hi * 0.82 + sampler.mean * 0.18;
+  for (let i = 0; i < sw * sh; i++){
+    let v = 128 + (sampler.lum[i] - ref) * k;
+    v = v < 0 ? 0 : v > 255 ? 255 : v;
+    const p = i * 4;
+    d[p] = d[p+1] = d[p+2] = v; d[p+3] = 255;
+  }
+  cx.putImageData(out, 0, 0);
+  per = { key, canvas: cv };
+  shadeCache.set(img, per);
+  return cv;
+}
+
+function paintPaperLight(ctx, sampler, img, o, cw, ch){
+  const { lighting, contrast, paperScale } = o;
+  if (!sampler || !img || lighting <= 0.001) return;
+  const map = buildShadeMap(img, sampler, contrast);
+  const sw = cw * paperScale, sh = ch * paperScale;
+  ctx.save();
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.globalAlpha = Math.min(1, lighting * 0.62);
+  drawCover(ctx, map, (cw - sw) / 2, (ch - sh) / 2, sw, sh);
+  ctx.restore();
+}
+
+return { loadImage, buildSampler, frameToPaperUV, sampleAt, drawCover, drawSheet, reliefWarp, buildShadeMap, paintPaperLight };
+})();
+
+const __m_folds = (function(){
+const { hash, shash, fbm1, clamp, lerp } = __m_rng;
+// ─────────────────────────────────────────────────────────────────────────────
+// Fold grid + crease depth.
+//
+// Three separable signals, measured off the reference clip, are what make a
+// folded sheet read as physical:
+//   1. panel tone step   — each panel sits at its own brightness (~±2%)
+//   2. panel content offset — the print is DISCONTINUOUS across every crease
+//   3. crease = bright ridge + soft shadow, varying ALONG its own length
+// A crease drawn as one uniform stroke reads as CSS. The along-line variation
+// is the whole trick.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SAMPLES = 26;   // samples per fold line / panel edge
+
+// A fold line is a gently wavering curve, not a straight rule.
+function makeLine(seed, idx, salt, nominal, span, waver, skew){
+  const amp = waver * (0.4 + hash(seed, idx, salt) * 1.2);
+  const freq = 0.7 + hash(seed, idx, salt + 5) * 1.3;
+  const phase = hash(seed, idx, salt + 9) * 10;
+  const tilt = shash(seed, idx, salt + 13) * skew;
+  return {
+    nominal,
+    // position of the line at parameter t (0..1 along its length)
+    at(t){
+      const n = (fbm1(seed, salt + idx * 31, phase + t * freq * 3.1) - 0.5) * 2;
+      return nominal + n * amp + (t - 0.5) * tilt;
+    },
+    // mountain folds catch light on the near side, valleys on the far side
+    mountain: hash(seed, idx, salt + 21) > 0.42,
+    weight: 0.55 + hash(seed, idx, salt + 27) * 0.45,
+    span
+  };
+}
+
+function buildGrid(opt){
+  const { cols, rows, w, h, seed, gridJitter, foldWaver, foldSkew } = opt;
+
+  const vx = [], hy = [];
+  for (let i = 0; i <= cols; i++){
+    let nx = (i / cols) * w;
+    if (i > 0 && i < cols) nx += shash(seed, i, 41) * gridJitter * (w / cols) * 0.5;
+    vx.push(nx);
+  }
+  for (let j = 0; j <= rows; j++){
+    let ny = (j / rows) * h;
+    if (j > 0 && j < rows) ny += shash(seed, j, 43) * gridJitter * (h / rows) * 0.5;
+    hy.push(ny);
+  }
+
+  // Edge lines don't waver — the sheet's outer boundary is the canvas.
+  const vLines = vx.map((x, i) => (i === 0 || i === cols)
+    ? { nominal: x, at: () => x, mountain: true, weight: 0, span: h }
+    : makeLine(seed, i, 101, x, h, foldWaver, foldSkew));
+  const hLines = hy.map((y, j) => (j === 0 || j === rows)
+    ? { nominal: y, at: () => y, mountain: true, weight: 0, span: w }
+    : makeLine(seed, j, 211, y, w, foldWaver, foldSkew));
+
+  // corner (i,j) — one fixed-point pass is plenty, deviations are a few px
+  const cornerX = [], cornerY = [];
+  for (let j = 0; j <= rows; j++){
+    cornerX[j] = []; cornerY[j] = [];
+    for (let i = 0; i <= cols; i++){
+      const y0 = hLines[j].at(vx[i] / w);
+      const x1 = vLines[i].at(y0 / h);
+      const y1 = hLines[j].at(x1 / w);
+      cornerX[j][i] = x1; cornerY[j][i] = y1;
+    }
+  }
+
+  const panels = [];
+  for (let j = 0; j < rows; j++){
+    for (let i = 0; i < cols; i++){
+      const idx = j * cols + i;
+      panels.push({
+        i, j, idx,
+        x0: cornerX[j][i], x1: cornerX[j][i+1],
+        y0: cornerY[j][i], y1: cornerY[j+1][i],
+        cx: (cornerX[j][i] + cornerX[j][i+1]) / 2,
+        cy: (cornerY[j][i] + cornerY[j+1][i]) / 2,
+        w: cornerX[j][i+1] - cornerX[j][i],
+        h: cornerY[j+1][i] - cornerY[j][i],
+        // this panel's own little plane: how far off-register its print sits
+        offX: shash(seed, idx, 61),
+        offY: shash(seed, idx, 62),
+        rot:  shash(seed, idx, 63),
+        tone: shash(seed, idx, 64),
+        // mountain if either bounding fold is a mountain — drives the tone ramp
+        up: (vLines[i+1].mountain ? 1 : -1) * 0.5 + (hLines[j+1].mountain ? 1 : -1) * 0.5
+      });
+    }
+  }
+
+  return { vLines, hLines, cornerX, cornerY, panels, cols, rows, w, h, seed };
+}
+
+// Panel outline, following the wavering folds, optionally torn.
+// Returned as a cached Path2D — these get clipped/filled several times per
+// frame and rebuilding 200 line segments each time is pure waste.
+function panelPath(grid, p, tear, bleed = 0.75){
+  const key = tear.toFixed(2) + ':' + bleed.toFixed(2);
+  if (!p._paths) p._paths = {};
+  if (p._paths[key]) return p._paths[key];
+
+  const { vLines, hLines, cornerX, cornerY, w, h, seed } = grid;
+  const { i, j } = p;
+  const tj = (t, salt) => tear ? (fbm1(seed, salt, t * 11) - 0.5) * 2 * tear : 0;
+  const path = new Path2D();
+
+  for (let s = 0; s <= SAMPLES; s++){                       // top
+    const t = s / SAMPLES;
+    const x = lerp(cornerX[j][i], cornerX[j][i+1], t);
+    const y = hLines[j].at(x / w) + tj(t, 300 + j * 17 + i) - bleed;
+    s ? path.lineTo(x, y) : path.moveTo(x, y);
+  }
+  for (let s = 0; s <= SAMPLES; s++){                       // right
+    const t = s / SAMPLES;
+    const y = lerp(cornerY[j][i+1], cornerY[j+1][i+1], t);
+    path.lineTo(vLines[i+1].at(y / h) + tj(t, 400 + i * 19 + j) + bleed, y);
+  }
+  for (let s = SAMPLES; s >= 0; s--){                       // bottom
+    const t = s / SAMPLES;
+    const x = lerp(cornerX[j+1][i], cornerX[j+1][i+1], t);
+    path.lineTo(x, hLines[j+1].at(x / w) + tj(t, 300 + (j+1) * 17 + i) + bleed);
+  }
+  for (let s = SAMPLES; s >= 0; s--){                       // left
+    const t = s / SAMPLES;
+    const y = lerp(cornerY[j][i], cornerY[j+1][i], t);
+    path.lineTo(vLines[i].at(y / h) + tj(t, 400 + i * 19 + j) - bleed, y);
+  }
+  path.closePath();
+  p._paths[key] = path;
+  return path;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fold layers.
+//
+// The tone step, the panel lift and the creases don't change between stop-motion
+// beats — only the print and the sheet underneath do. So they're baked ONCE into
+// three full-canvas layers and blitted, instead of being redrawn every frame.
+//
+// The layers are built so compositing them is mathematically identical to
+// drawing each element in sequence:
+//   shadow layer — white ground, elements drawn with 'multiply'  → blit 'multiply'
+//   light layer  — black ground, elements drawn with 'screen'    → blit 'screen'
+//   tone layer   — mid-grey ground (soft-light identity)         → blit 'soft-light'
+// White, black and mid grey are the identities of their operators, so untouched
+// regions pass through unchanged.
+// ─────────────────────────────────────────────────────────────────────────────
+let cache = { key: '', shadow: null, light: null, tone: null };
+
+function layer(w, h, fill){
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const c = cv.getContext('2d');
+  c.fillStyle = fill;
+  c.fillRect(0, 0, w, h);
+  return { cv, c };
+}
+
+// Strokes a fold as ~SAMPLES short segments so width and alpha can breathe along
+// its length. A single uniform stroke is what makes a crease read as CSS.
+function strokeFold(c, line, vertical, w, h, nx, ny, o){
+  const { color, width, alpha, seed, salt, vary, blur } = o;
+  if (blur && c.filter !== undefined) c.filter = `blur(${blur}px)`;
+  c.strokeStyle = color;
+  c.lineCap = 'round';
+  c.lineJoin = 'round';
+  let px = null, py = null;
+  for (let s = 0; s <= SAMPLES; s++){
+    const t = s / SAMPLES;
+    const x = vertical ? line.at(t) + nx : t * w + nx;
+    const y = vertical ? t * h + ny : line.at(t) + ny;
+    if (px !== null){
+      const n = fbm1(seed, salt, t * 6.2);
+      const m = 1 - vary + vary * (n * 1.7);
+      const a = alpha * clamp(m, 0, 1.6);
+      if (a > 0.002){
+        c.globalAlpha = Math.min(1, a);
+        c.lineWidth = Math.max(0.35, width * (0.55 + m * 0.75));
+        c.beginPath(); c.moveTo(px, py); c.lineTo(x, y); c.stroke();
+      }
+    }
+    px = x; py = y;
+  }
+  if (c.filter !== undefined) c.filter = 'none';
+  c.globalAlpha = 1;
+}
+
+function buildFoldLayers(grid, o){
+  const { w, h, seed, vLines, hLines, panels } = grid;
+  const { tone, highlight, shadow, width, softness, variance, lift, lightAngle } = o;
+  const key = [w, h, grid.cols, grid.rows, seed, tone, highlight, shadow,
+               width, softness, variance, lift, lightAngle].join('|');
+  if (cache.key === key) return cache;
+
+  const wantShadow = shadow > 0.001 || lift > 0.001 || tone > 0.001;
+  const wantLight = highlight > 0.001 || tone > 0.001;
+  const wantTone = tone > 0.001;
+
+  const S = wantShadow ? layer(w, h, '#ffffff') : null;
+  const L = wantLight ? layer(w, h, '#000000') : null;
+  const T = wantTone ? layer(w, h, '#808080') : null;
+  const lx = Math.cos(lightAngle), ly = Math.sin(lightAngle);
+
+  // ── per-panel tone: a flat step plus a gentle ramp toward the fold it leans
+  //    into. Both tiny — 2% is what the reference measures — but without them
+  //    the sheet collapses into flat collage.
+  if (wantTone){
+    for (const p of panels){
+      const path = panelPath(grid, p, 0, 0.75);
+      const step = p.tone * tone * 0.055;
+      if (step > 0 && L){
+        L.c.save(); L.c.clip(path);
+        L.c.globalCompositeOperation = 'screen';
+        L.c.globalAlpha = step; L.c.fillStyle = '#ffffff';
+        L.c.fillRect(p.x0 - 4, p.y0 - 4, p.w + 8, p.h + 8);
+        L.c.restore();
+      } else if (step < 0 && S){
+        S.c.save(); S.c.clip(path);
+        S.c.globalCompositeOperation = 'multiply';
+        S.c.globalAlpha = -step; S.c.fillStyle = '#8a8378';
+        S.c.fillRect(p.x0 - 4, p.y0 - 4, p.w + 8, p.h + 8);
+        S.c.restore();
+      }
+      const g = T.c.createLinearGradient(
+        p.cx - lx * p.w * 0.6, p.cy - ly * p.h * 0.6,
+        p.cx + lx * p.w * 0.6, p.cy + ly * p.h * 0.6);
+      const k = clamp(tone * 0.5 * (0.6 + p.up * 0.4), 0, 1);
+      g.addColorStop(0, `rgba(255,255,255,${0.30 * k})`);
+      g.addColorStop(0.5, 'rgba(128,128,128,0)');
+      g.addColorStop(1, `rgba(0,0,0,${0.26 * k})`);
+      T.c.save(); T.c.clip(path);
+      T.c.fillStyle = g;
+      T.c.fillRect(p.x0 - 4, p.y0 - 4, p.w + 8, p.h + 8);
+      T.c.restore();
+    }
+  }
+
+  // ── panel lift: the lip of each panel casting onto its neighbour, built as
+  //    (offset shapes) MINUS (shapes) so only the overhanging sliver is dark.
+  if (lift > 0.001 && S){
+    const cut = layer(w, h, 'rgba(0,0,0,0)');
+    cut.c.fillStyle = '#2E271F';
+    cut.c.save();
+    cut.c.translate(-Math.cos(lightAngle) * lift * 5, -Math.sin(lightAngle) * lift * 5);
+    for (const p of panels) cut.c.fill(panelPath(grid, p, 0, 0.4));
+    cut.c.restore();
+    cut.c.globalCompositeOperation = 'destination-out';
+    for (const p of panels) cut.c.fill(panelPath(grid, p, 0, 0.4));
+
+    S.c.save();
+    S.c.globalCompositeOperation = 'multiply';
+    S.c.globalAlpha = Math.min(1, lift * 0.55);
+    if (S.c.filter !== undefined) S.c.filter = `blur(${0.6 + lift * 2.4}px)`;
+    S.c.drawImage(cut.cv, 0, 0);
+    if (S.c.filter !== undefined) S.c.filter = 'none';
+    S.c.restore();
+  }
+
+  // ── the creases themselves: shadow band on the unlit side, bright ridge hard
+  //    against it, and a wide faint bloom for the paper curving away.
+  const doLine = (line, vertical, salt) => {
+    if (line.weight <= 0) return;
+    const wt = line.weight;
+    const side = line.mountain ? 1 : -1;
+    const nx = vertical ? 1 : -ly * 0.35;
+    const ny = vertical ? lx * 0.35 : 1;
+    const sgn = side * ((vertical ? lx : ly) >= 0 ? 1 : -1);
+    const off = width * (0.85 + softness * 0.9);
+
+    if (shadow > 0.001 && S){
+      S.c.globalCompositeOperation = 'multiply';
+      strokeFold(S.c, line, vertical, w, h, nx * off * sgn, ny * off * sgn, {
+        color: '#5A4B3C', width: width * (1.7 + softness * 2.8),
+        alpha: shadow * 0.55 * wt, seed, salt: salt + 1, vary: variance,
+        blur: 0.8 + softness * 3.2 });
+      strokeFold(S.c, line, vertical, w, h, nx * off * 0.45 * sgn, ny * off * 0.45 * sgn, {
+        color: '#3A3026', width: width * 0.95,
+        alpha: shadow * 0.48 * wt, seed, salt: salt + 2, vary: variance,
+        blur: 0.25 + softness * 0.9 });
+    }
+    if (highlight > 0.001 && L){
+      L.c.globalCompositeOperation = 'screen';
+      strokeFold(L.c, line, vertical, w, h, -nx * off * 0.30 * sgn, -ny * off * 0.30 * sgn, {
+        color: '#FFF9EC', width: width * 0.78,
+        alpha: highlight * 0.72 * wt, seed, salt: salt + 3, vary: variance,
+        blur: 0.15 + softness * 0.5 });
+      strokeFold(L.c, line, vertical, w, h, -nx * off * 1.5 * sgn, -ny * off * 1.5 * sgn, {
+        color: '#FFF3DF', width: width * (2.8 + softness * 3.4),
+        alpha: highlight * 0.22 * wt, seed, salt: salt + 4, vary: variance * 0.7,
+        blur: 1.6 + softness * 4 });
+    }
+  };
+  vLines.forEach((l, i) => doLine(l, true, 500 + i * 37));
+  hLines.forEach((l, j) => doLine(l, false, 900 + j * 37));
+
+  cache = { key, shadow: S && S.cv, light: L && L.cv, tone: T && T.cv };
+  return cache;
+}
+
+function paintFoldLayers(ctx, layers){
+  const blit = (cv, op) => {
+    if (!cv) return;
+    ctx.globalCompositeOperation = op;
+    ctx.drawImage(cv, 0, 0);
+  };
+  ctx.save();
+  blit(layers.tone, 'soft-light');
+  blit(layers.shadow, 'multiply');
+  blit(layers.light, 'screen');
+  ctx.restore();
+}
+
+// ── blocks ───────────────────────────────────────────────────────────────────
+// A block is one or more adjacent panels sharing a single image. This is what
+// reference A actually does: a photo spans two or three fold panels, and the
+// print still jumps at the crease inside it — the sheet was folded AFTER it was
+// printed. Grouping 0 = every panel its own image (reference B's bands).
+function buildBlocks(grid, seed, grouping, cap = 4){
+  const { cols, rows, panels } = grid;
+  const parent = panels.map((_, i) => i);
+  const find = (a) => { while (parent[a] !== a) a = parent[a] = parent[parent[a]]; return a; };
+  const size = panels.map(() => 1);
+  const union = (a, b) => {
+    a = find(a); b = find(b);
+    if (a === b || size[a] + size[b] > cap) return;
+    parent[b] = a; size[a] += size[b];
+  };
+
+  if (grouping > 0.001){
+    let n = 0;
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++){
+      const idx = j * cols + i;
+      if (i + 1 < cols && hash(seed, n++, 131) < grouping) union(idx, idx + 1);
+      if (j + 1 < rows && hash(seed, n++, 137) < grouping) union(idx, idx + cols);
+    }
+  }
+
+  const byRoot = new Map();
+  panels.forEach((p, i) => {
+    const r = find(i);
+    let b = byRoot.get(r);
+    if (!b){
+      b = { id: byRoot.size, panels: [], x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity,
+            i: p.i, j: p.j };
+      byRoot.set(r, b);
+    }
+    b.panels.push(p);
+    b.x0 = Math.min(b.x0, p.x0); b.y0 = Math.min(b.y0, p.y0);
+    b.x1 = Math.max(b.x1, p.x0 + p.w); b.y1 = Math.max(b.y1, p.y0 + p.h);
+    b.i = Math.min(b.i, p.i); b.j = Math.min(b.j, p.j);
+  });
+
+  const blocks = [...byRoot.values()];
+  blocks.forEach(b => {
+    b.w = b.x1 - b.x0; b.h = b.y1 - b.y0;
+    b.cx = (b.x0 + b.x1) / 2; b.cy = (b.y0 + b.y1) / 2;
+  });
+  // stable reading order so reveal sequencing is predictable
+  blocks.sort((a, b) => (a.j - b.j) || (a.i - b.i));
+  blocks.forEach((b, k) => { b.id = k; b.panels.forEach(p => p.block = k); });
+  return blocks;
+}
+
+return { buildGrid, panelPath, buildFoldLayers, paintFoldLayers, buildBlocks };
+})();
+
+const __m_imperfections = (function(){
+const { mulberry32, hash, clamp } = __m_rng;
+// Analog imperfections: print wear, camera shake, film grain, vignette.
+
+const VIGNETTE = '#3B2F26';
+
+// Print wear — where the press didn't take.
+//
+// This started as discs punched out with destination-out, which is right for
+// type (a bite out of a letterform reads as ink failing) but wrong for a photo:
+// on a flat field they read as perfect circles, i.e. bubbles. Wear is now a
+// 2D value-noise field, thresholded so only its peaks break through. That gives
+// irregular patches with ragged edges that merge as the amount climbs.
+const h2 = (seed, xi, yi) => hash(seed, (xi * 1836311 + yi * 2971215) | 0, 17);
+
+function valueNoise2(seed, x, y){
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = h2(seed, xi, yi),     b = h2(seed, xi + 1, yi);
+  const c = h2(seed, xi, yi + 1), d = h2(seed, xi + 1, yi + 1);
+  return (a + (b - a) * u) + ((c + (d - c) * u) - (a + (b - a) * u)) * v;
+}
+
+function fbm2(seed, x, y, oct = 3){
+  let sum = 0, amp = 1, norm = 0, fx = x * 0.45, fy = y;
+  for (let o = 0; o < oct; o++){
+    sum += valueNoise2(seed + o * 131, fx, fy) * amp;
+    norm += amp; amp *= 0.5; fx *= 2.1; fy *= 2.1;
+  }
+  return sum / norm;
+}
+
+const smoothstep = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+
+// Print unevenness — a slow density drift across the sheet, as if the ink film
+// wasn't laid down at a constant thickness. Broad and low-frequency, so a
+// handful of noise cells is plenty.
+// UNEVENNESS is the opposite scale — a slow density drift across the whole
+// sheet — so a handful of noise cells is plenty.
+let uMask = null, ubx = null, uKey = '';
+function unevenMask(o, cw, ch){
+  const { unevenness, seed } = o;
+  const key = [unevenness, seed, cw, ch].join('|');
+  if (uMask && uKey === key) return uMask;
+  if (!uMask){ uMask = document.createElement('canvas'); ubx = uMask.getContext('2d'); }
+  const mw = 96, mh = Math.max(32, Math.round(96 * ch / cw));
+  if (uMask.width !== mw || uMask.height !== mh){ uMask.width = mw; uMask.height = mh; }
+
+  const img = ubx.createImageData(mw, mh);
+  const d = img.data;
+  const uSeed = (seed * 104729 + 17) >>> 0;
+  for (let y = 0; y < mh; y++){
+    for (let x = 0; x < mw; x++){
+      const v = fbm2(uSeed, x * 0.045, y * 0.045, 2);
+      const a = smoothstep((v - 0.46) / 0.34) * unevenness * 110;
+      const p = (y * mw + x) * 4;
+      d[p] = d[p+1] = d[p+2] = 0;
+      d[p+3] = a > 255 ? 255 : a;
+    }
+  }
+  ubx.putImageData(img, 0, 0);
+  uKey = key;
+  return uMask;
+}
+
+let starveBuf = null, stx = null;
+function applyPrintWear(src, o, cw, ch){
+  const { unevenness } = o;
+  if (unevenness <= 0.001) return src;
+  if (!starveBuf){ starveBuf = document.createElement('canvas'); stx = starveBuf.getContext('2d'); }
+  if (starveBuf.width !== cw || starveBuf.height !== ch){ starveBuf.width = cw; starveBuf.height = ch; }
+  stx.clearRect(0, 0, cw, ch);
+  stx.drawImage(src, 0, 0);
+
+  stx.save();
+  stx.globalCompositeOperation = 'destination-out';
+  stx.imageSmoothingEnabled = true;
+  stx.imageSmoothingQuality = 'high';
+  stx.drawImage(unevenMask(o, cw, ch), 0, 0, cw, ch);
+  stx.restore();
+  return starveBuf;
+}
+
+// Camera shake only changes on a quantized frame tick, so it stutters like a
+// rostrum camera instead of drifting like a smooth transform.
+function shakeFor(seed, frame, amount){
+  return {
+    x: (hash(seed, frame, 11) - 0.5) * 2 * amount,
+    y: (hash(seed, frame, 12) - 0.5) * 2 * amount,
+    r: (hash(seed, frame, 13) - 0.5) * 0.010 * amount
+  };
+}
+
+const grainBuf = document.createElement('canvas');
+const grx = grainBuf.getContext('2d');
+let grainFrame = -1, grainStrength = -1;
+function paintGrain(strength, frame){
+  if (grainFrame === frame && grainStrength === strength) return;
+  grainFrame = frame; grainStrength = strength;
+  const g = 240;
+  grainBuf.width = g; grainBuf.height = g;
+  const img = grx.createImageData(g, g);
+  const d = img.data;
+  const rng = mulberry32((1000 + frame) >>> 0);
+  for (let i = 0; i < d.length; i += 4){
+    const v = rng() * 255;
+    d[i] = d[i+1] = d[i+2] = v;
+    d[i+3] = rng() * 92 * strength;
+  }
+  grx.putImageData(img, 0, 0);
+}
+
+function paintGrainAndVignette(ctx, o, cw, ch){
+  const { grain, vignette, frame } = o;
+  if (vignette > 0.001){
+    const g = ctx.createRadialGradient(cw/2, ch/2, Math.min(cw,ch) * 0.34,
+                                       cw/2, ch/2, Math.max(cw,ch) * 0.74);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, VIGNETTE + Math.floor(clamp(vignette,0,1) * 150).toString(16).padStart(2,'0'));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, cw, ch);
+  }
+  if (grain <= 0.001) return;
+  paintGrain(grain, frame);
+  ctx.save();
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.globalAlpha = Math.min(1, grain * 0.85);
+  const s = 2.0;
+  for (let y = 0; y < ch; y += grainBuf.height * s)
+    for (let x = 0; x < cw; x += grainBuf.width * s)
+      ctx.drawImage(grainBuf, x, y, grainBuf.width * s, grainBuf.height * s);
+  ctx.restore();
+}
+
+return { applyPrintWear, shakeFor, paintGrainAndVignette };
+})();
+
+const __m_session = (function(){
+
+// Session export/import.
+//
+// A session is the whole document: every control value, the canvas size, and
+// the images. Demo images are stored by index rather than by bytes — they're
+// already baked into the page, so a demo-only session is a couple of KB.
+// Uploaded images are re-encoded to a sane size before travelling.
+// The app can be served from GitHub Pages (static only), so the session API
+// always points at the Worker by absolute URL rather than same-origin.
+// Both are stamped by build.py.
+const API_BASE = 'https://paper-image-shuffle.nnnephirale.workers.dev';
+const APP_BASE = 'https://nnnephirale.github.io/pashu/';
+
+const MAX_EDGE = 1800;
+const JPEG_Q = 0.86;
+
+function reencode(img){
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  const s = Math.min(1, MAX_EDGE / Math.max(iw, ih));
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(iw * s));
+  cv.height = Math.max(1, Math.round(ih * s));
+  cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+  return cv.toDataURL('image/jpeg', JPEG_Q);
+}
+
+function serialize({ settings, size, photos }){
+  return {
+    v: 1,
+    created: new Date().toISOString(),
+    settings,
+    size,
+    images: photos.map(p => p.demo
+      ? { d: p.demoIndex, on: p.on }
+      : { u: reencode(p.img), on: p.on })
+  };
+}
+
+async function publish(session){
+  const r = await fetch(API_BASE + '/api/session', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(session)
+  });
+  if (!r.ok) throw new Error(`Publish failed (${r.status})`);
+  return r.json();                       // { id, key }
+}
+
+// Overwrites in place, so the shared URL stays the same forever.
+async function save(id, key, session){
+  const r = await fetch(`${API_BASE}/api/session/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', 'x-edit-key': key || '' },
+    body: JSON.stringify(session)
+  });
+  if (r.status === 403) throw new Error('This link can view but not edit this session.');
+  if (!r.ok) throw new Error(`Save failed (${r.status})`);
+  return r.json();
+}
+
+async function load(id){
+  const r = await fetch(`${API_BASE}/api/session/${encodeURIComponent(id)}`);
+  if (!r.ok) throw new Error(r.status === 404 ? 'Session not found' : `Load failed (${r.status})`);
+  return r.json();
+}
+
+// Editable is s, play-only is v. Path form works on the Worker; query form works
+// anywhere, including GitHub Pages under a project subpath, so that's what Share
+// hands out.
+function routeOf(loc = location){
+  const q = new URLSearchParams(loc.search);
+  const key = q.get('k') || '';
+  for (const [k, mode] of [['s', 'edit'], ['v', 'view']]){
+    const id = q.get(k);
+    if (id && /^[A-Za-z0-9_-]{4,40}$/.test(id))
+      return { mode, id, key: mode === 'edit' ? key : '' };
+  }
+  const m = /^(?:.*)\/([sv])\/([A-Za-z0-9_-]{4,40})\/?$/.exec(loc.pathname);
+  return m ? { mode: m[1] === 'v' ? 'view' : 'edit', id: m[2], key } : null;
+}
+
+// Where a shared link should point. Served over the web, that's here; opened
+// from a local file, fall back to the published app.
+function appBase(){
+  if (location.protocol === 'http:' || location.protocol === 'https:')
+    return location.origin + location.pathname.replace(/\/(index\.html)?$/, '/');
+  return APP_BASE.replace(/\/?$/, '/');
+}
+
+// What counts as "changed". Deliberately excludes anything transient (the frame
+// counter, play state) — only the document itself.
+function signature({ settings, size, photos }){
+  return JSON.stringify({
+    s: settings,
+    z: size,
+    i: photos.map(p => [p.demo ? 'd' + p.demoIndex : p.src, p.on ? 1 : 0])
+  });
+}
+
+const canPublish = () => true;
+
+return { serialize, publish, save, load, routeOf, appBase, signature, canPublish };
+})();
+
+const __m_app = (function(){
+const { hash, shash, clamp, easeOutCubic, easeInOutCubic, mulberry32 } = __m_rng;
+const C = __m_controls;
+const P = __m_paper;
+const F = __m_folds;
+const IMP = __m_imperfections;
+const SESSION = __m_session;
+
+
+
+
+
+const BUILD = '0903-1112';
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const printBuf = document.createElement('canvas');
+const pbx = printBuf.getContext('2d');
+
+const DEMO = [
+'../assets/demo/demo_1.jpg',
+'../assets/demo/demo_2.jpg',
+'../assets/demo/demo_3.jpg',
+'../assets/demo/demo_4.jpg',
+'../assets/demo/demo_5.jpg',
+'../assets/demo/demo_6.jpg',
+'../assets/demo/demo_7.jpg',
+'../assets/demo/demo_8.jpg'
+];
+const PAPERS = [
+'../assets/paper/paper_0.png',
+'../assets/paper/paper_1.png',
+'../assets/paper/paper_2.png',
+'../assets/paper/paper_3.png',
+'../assets/paper/paper_4.png',
+'../assets/paper/paper_5.png',
+'../assets/paper/paper_6.png',
+'../assets/paper/paper_7.png',
+'../assets/paper/paper_8.png'
+];
+
+let photos = [];            // {src, img, on}
+let papers = [];            // {src, img, on}
+let paperSamplers = new Map();
+
+// ── control schema ───────────────────────────────────────────────────────────
+const photoStrip = document.createElement('div');
+photoStrip.className = 'thumbs';
+const paperStrip = document.createElement('div');
+paperStrip.className = 'thumbs';
+const photoHint = document.createElement('div');
+photoHint.className = 'hint';
+photoHint.textContent = 'Click to mute · drag images anywhere to add';
+
+const schema = [
+  { type:'segmented', key:'mode', label:'', default:'both', cls:'mode-bar', options:[
+      {id:'both',label:'Randomized'},{id:'sweep',label:'Sequential'}] },
+
+  { type:'section', label:'Images', collapsed:false },
+  { type:'custom', render:() => photoStrip },
+  { type:'custom', render:() => photoHint },
+  { type:'buttons', buttons:[{key:'addPhotos',label:'Add'},{key:'resetPhotos',label:'Demo set'},
+                             {key:'clearPhotos',label:'Clear',danger:true}] },
+  { type:'segmented', key:'imageFit', label:'Fit', default:'sheet', options:[
+      {id:'sheet',label:'Sheet'},{id:'panel',label:'Panel'}] },
+  { type:'segmented', key:'shuffleMode', label:'Next Image', default:'random', options:[
+      {id:'random',label:'Any'},{id:'sequential',label:'In Order'}] },
+  { type:'slider', key:'holdFrames', label:'Hold', min:1, max:30, step:1, default:3, unit:'f' },
+  { type:'slider', key:'holdJitter', label:'Hold Jitter', min:0, max:1, step:0.05, default:0.6 },
+  { type:'slider', key:'swapChance', label:'Swap Chance', min:0, max:1, step:0.05, default:0.55 },
+  { type:'select', key:'printBlend', label:'Print Blend', default:'multiply', options:[
+      {id:'source-over',label:'Normal'},{id:'multiply',label:'Multiply'},
+      {id:'darken',label:'Darken'},{id:'overlay',label:'Overlay'}] },
+  { type:'slider', key:'printOpacity', label:'Print Opacity', min:0, max:1, step:0.01, default:0.94 },
+  { type:'slider', key:'printScale', label:'Print Scale', min:0.5, max:2.5, step:0.01, default:1 },
+  { type:'slider', key:'coverage', label:'Coverage', min:0, max:1, step:0.01, default:1 },
+
+  { type:'section', label:'Segments', collapsed:false },
+  { type:'number', key:'cols', label:'Columns', min:1, max:12, step:1, default:3 },
+  { type:'number', key:'rows', label:'Rows', min:1, max:12, step:1, default:4 },
+  { type:'slider', key:'gridJitter', label:'Grid Jitter', min:0, max:1, step:0.01, default:0.18 },
+  { type:'slider', key:'foldWaver', label:'Fold Waver', min:0, max:12, step:0.1, default:2.2, unit:'px' },
+  { type:'slider', key:'foldSkew', label:'Fold Skew', min:0, max:20, step:0.5, default:4, unit:'px' },
+  { type:'slider', key:'tear', label:'Edge Tear', min:0, max:6, step:0.1, default:0.6, unit:'px' },
+  { type:'slider', key:'panelOffset', label:'Panel Offset', min:0, max:24, step:0.5, default:7, unit:'px' },
+  { type:'slider', key:'panelRotate', label:'Panel Rotate', min:0, max:2.5, step:0.05, default:0.25, unit:'°' },
+  { type:'slider', key:'grouping', label:'Grouping', min:0, max:1, step:0.02, default:0.35 },
+  { type:'number', key:'groupCap', label:'Max Block', min:1, max:12, step:1, default:4 },
+
+  { type:'section', label:'Fold & Depth', collapsed:false },
+  { type:'slider', key:'panelTone', label:'Panel Tone', min:0, max:1, step:0.01, default:0.5 },
+  { type:'slider', key:'creaseHighlight', label:'Ridge Light', min:0, max:2, step:0.02, default:1.1 },
+  { type:'slider', key:'creaseShadow', label:'Ridge Shadow', min:0, max:2, step:0.02, default:0.10 },
+  { type:'slider', key:'creaseWidth', label:'Ridge Width', min:0.3, max:8, step:0.1, default:1.6, unit:'px' },
+  { type:'slider', key:'creaseSoft', label:'Ridge Softness', min:0, max:2, step:0.02, default:0.32 },
+  { type:'slider', key:'creaseVary', label:'Ridge Variance', min:0, max:1, step:0.02, default:0.5 },
+  { type:'slider', key:'panelLift', label:'Panel Lift', min:0, max:2, step:0.02, default:1.3 },
+  { type:'slider', key:'lightAngle', label:'Light Angle', min:0, max:360, step:1, default:305, unit:'°' },
+
+  { type:'section', label:'Paper & Environment', collapsed:true },
+  { type:'custom', render:() => paperStrip },
+  { type:'segmented', key:'paperSwapMode', label:'Swap', default:'random', options:[
+      {id:'sequential',label:'Sequential'},{id:'random',label:'Random'},{id:'hold',label:'Hold'}] },
+  { type:'slider', key:'paperScale', label:'Paper Scale', min:0.5, max:3, step:0.05, default:1.15 },
+  { type:'slider', key:'paperDistortion', label:'Paper Distortion', min:0, max:3, step:0.05, default:0.9 },
+  { type:'slider', key:'paperLighting', label:'Paper Lighting', min:0, max:2, step:0.05, default:0.85 },
+  { type:'slider', key:'lightingContrast', label:'Lighting Contrast', min:0, max:2, step:0.05, default:1 },
+
+  { type:'section', label:'Animation & Stop-Motion', collapsed:false },
+  { type:'slider', key:'fps', label:'FPS', min:1, max:30, step:1, default:6 },
+  { type:'slider', key:'tileBeat', label:'Tile Beat', min:1, max:12, step:1, default:1, unit:'f' },
+  { type:'slider', key:'sweepHold', label:'Sweep Hold', min:0, max:40, step:1, default:6, unit:'f' },
+  { type:'slider', key:'revealDuration', label:'Reveal', min:0.1, max:10, step:0.1, default:1.8, unit:'s' },
+  { type:'slider', key:'revealStagger', label:'Stagger', min:0, max:1, step:0.05, default:0.7 },
+  { type:'select', key:'revealOrder', label:'Order', default:'reading', options:[
+      {id:'reading',label:'Reading'},{id:'scattered',label:'Scattered'},
+      {id:'centre',label:'Centre Out'},{id:'columns',label:'Columns'}] },
+  { type:'select', key:'entry', label:'Entry', default:'snap', options:[
+      {id:'snap',label:'Snap'},{id:'fade',label:'Fade'},{id:'slide',label:'Slide'},
+      {id:'grow',label:'Grow'}] },
+  { type:'slider', key:'entryFrames', label:'Entry Length', min:0, max:12, step:1, default:2, unit:'f' },
+  { type:'toggle', key:'loop', label:'Loop', default:true },
+
+  { type:'section', label:'Analog Imperfections', collapsed:false },
+  { type:'slider', key:'posJitter', label:'Position Jitter', min:0, max:20, step:0.5, default:3, unit:'px' },
+  { type:'slider', key:'rotJitter', label:'Rotation Jitter', min:0, max:8, step:0.1, default:0.9, unit:'°' },
+  { type:'slider', key:'unevenness', label:'Print Unevenness', min:0, max:1, step:0.01, default:0.22 },
+  { type:'slider', key:'cameraShake', label:'Camera Shake', min:0, max:12, step:0.1, default:1.2 },
+  { type:'slider', key:'filmGrain', label:'Film Grain', min:0, max:1, step:0.01, default:0.07 },
+  { type:'slider', key:'vignette', label:'Vignette', min:0, max:1, step:0.01, default:0.22 },
+  { type:'slider', key:'seed', label:'Seed', min:1, max:9999, step:1, default:2301 },
+  { type:'toggle', key:'debugTiles', label:'Tile numbers', default:false },
+  { type:'buttons', buttons:[{key:'reroll',label:'Reroll seed'},{key:'resetAll2',label:'Reset all',danger:true}] }
+];
+
+C.build(schema, document.getElementById('controls'));
+C.onAny(() => { dirty = true; });
+
+// ── image handling ───────────────────────────────────────────────────────────
+function renderStrip(strip, list, onToggle, onRemove){
+  strip.innerHTML = '';
+  if (!list.length){
+    const e = document.createElement('div');
+    e.className = 'strip-empty';
+    e.textContent = 'No images — drop some in, or load the demo set';
+    strip.appendChild(e);
+    return;
+  }
+  list.forEach((it, i) => {
+    const d = document.createElement('div');
+    d.className = 'thumb' + (it.on ? '' : ' off');
+    d.innerHTML = `<img src="${it.src}" alt=""><span class="x">×</span>`;
+    d.querySelector('.x').addEventListener('click', (e) => { e.stopPropagation(); onRemove(i); });
+    d.addEventListener('click', () => onToggle(i));
+    strip.appendChild(d);
+  });
+}
+const refreshStrips = () => {
+  dirty = true;
+  syncSaveBtn();
+  // the empty state already says how to add images — don't say it twice
+  photoHint.style.display = photos.length ? '' : 'none';
+  renderStrip(photoStrip, photos,
+    i => { photos[i].on = !photos[i].on; refreshStrips(); resetTimeline(); },
+    i => {
+      const [gone] = photos.splice(i, 1);
+      // deleting a placeholder by hand is a dismissal too — don't resurrect it
+      if (gone && gone.demo) C.setExtra('demoDismissed', true);
+      refreshStrips(); resetTimeline();
+    });
+  renderStrip(paperStrip, papers,
+    i => { papers[i].on = !papers[i].on; refreshStrips(); },
+    i => { papers.splice(i, 1); refreshStrips(); });
+};
+
+async function addSources(list, srcs, demo = false){
+  let added = 0;
+  for (const src of srcs){
+    try {
+      const img = await P.loadImage(src);
+      const e = { src, img, on: true, demo };
+      if (demo) e.demoIndex = DEMO.indexOf(src);
+      list.push(e); added++;
+    }
+    catch { /* skip */ }
+  }
+  refreshStrips();
+  return added;
+}
+
+// The demo images are placeholders. The moment the user brings their own, the
+// placeholders go and stay gone — including across refreshes, so a reload never
+// resurrects images they deliberately replaced.
+async function addUserPhotos(srcs){
+  const hadDemo = photos.some(p => p.demo);
+  if (hadDemo) photos = photos.filter(p => !p.demo);
+  const n = await addSources(photos, srcs, false);
+  C.setExtra('demoDismissed', true);
+  resetTimeline();
+  if (!n) toast('Could not read those files');
+  else toast(hadDemo ? `${n} added · placeholders cleared` : `${n} added`);
+}
+
+const activePhotos = () => photos.filter(p => p.on);
+const activePapers = () => papers.filter(p => p.on);
+
+function samplerFor(entry){
+  if (!entry) return null;
+  if (!paperSamplers.has(entry.img)) paperSamplers.set(entry.img, P.buildSampler(entry.img));
+  return paperSamplers.get(entry.img);
+}
+
+// ── timeline ─────────────────────────────────────────────────────────────────
+let frame = 0, accum = 0, lastTs = 0, playing = true;
+// The animation is quantized to `fps`, so at the default 6fps a 60Hz redraw would
+// throw away nine frames in ten. Draw only when a beat lands or a control moves.
+let dirty = true;
+// off by default; the debug handle flips it on to record what each frame drew
+let trace = false, drawn = [];
+let drawnThisFrame = [];
+let segments = [];          // per panel: {cur, prev, lastSwap, entryAt}
+let paperIndex = 0;
+let grid = null, gridKey = '', blocks = [];
+
+function resetTimeline(){ frame = 0; accum = 0; paperIndex = 0; segments = []; dirty = true; }
+
+function ensureSegments(n){
+  if (segments.length === n) return;
+  segments = Array.from({ length: n }, (_, i) => ({
+    cur: i % Math.max(1, activePhotos().length), prev: -1, lastSwap: -999, entryAt: -999
+  }));
+}
+
+// Reveal schedule: when each panel first appears during assembly.
+function revealFrameFor(p, cols, rows, total, fps, seed){
+  const order = C.get('revealOrder');
+  const stagger = C.get('revealStagger');
+  const dur = C.get('revealDuration') * fps;
+  let t;
+  if (order === 'reading')      t = total > 1 ? p.id / (total - 1) : 0;
+  else if (order === 'columns') t = cols > 1 ? p.i / (cols - 1) : 0;
+  else if (order === 'centre'){
+    const dx = (p.i + 0.5) / cols - 0.5, dy = (p.j + 0.5) / rows - 0.5;
+    t = clamp(Math.hypot(dx, dy) / 0.72, 0, 1);
+  } else t = hash(seed, p.id, 71);
+  return t * stagger * dur;
+}
+
+function advance(){
+  frame++;
+  const seed = C.get('seed');
+  const ap = activePapers();
+  const mode = C.get('paperSwapMode');
+  if (ap.length > 1 && mode !== 'hold'){
+    if (mode === 'random'){
+      let next = Math.floor(mulberry32((seed + frame * 131) >>> 0)() * ap.length);
+      if (next === paperIndex) next = (next + 1) % ap.length;
+      paperIndex = next;
+    } else paperIndex = frame % ap.length;
+  } else if (ap.length <= 1) paperIndex = 0;
+
+  // segment shuffling
+  const n = activePhotos().length;
+  const runMode = C.get('mode');
+  const shuffles = runMode === 'shuffle' || runMode === 'both';
+  if (shuffles && n > 1 && grid && blocks.length){
+    const hold = C.get('holdFrames');
+    const hj = C.get('holdJitter');
+    const chance = C.get('swapChance');
+    const fps = C.get('fps');
+    const assembleEnd = runMode === 'both' ? assemblyLength(fps) : 0;
+    if (frame >= assembleEnd){
+      segments.forEach((s, i) => {
+        const wait = Math.max(1, Math.round(hold * (1 - hj * 0.5 + hash(seed, i * 13 + frame, 81) * hj)));
+        if (frame - s.lastSwap < wait) return;
+        if (hash(seed, i * 7 + frame, 83) > chance){ s.lastSwap = frame; return; }
+        let next;
+        if (C.get('shuffleMode') === 'sequential') next = (s.cur + 1) % n;
+        else {
+          next = Math.floor(hash(seed, i * 29 + frame, 89) * n);
+          if (next === s.cur) next = (next + 1) % n;
+        }
+        s.prev = s.cur; s.cur = next; s.lastSwap = frame; s.entryAt = frame;
+      });
+    }
+  }
+
+  if (C.get('loop') && grid){
+    const fps = C.get('fps');
+    const len = assemblyLength(fps) + Math.round(fps * 1.4);
+    if (runMode === 'assemble' && frame >= len) resetTimeline();
+  }
+}
+
+// Sweep needs a strict laying ORDER, not the normalised 0..1 offset the
+// assemble reveal uses — tile 5 must land after tile 4 and before tile 6.
+function assignSweepRanks(){
+  const order = C.get('mode') === 'sweep' ? 'reading' : C.get('revealOrder');
+  const seed = C.get('seed');
+  const arr = blocks.slice();
+  if (order === 'columns') arr.sort((a, b) => (a.i - b.i) || (a.j - b.j));
+  else if (order === 'centre'){
+    const d = (b) => Math.hypot((b.cx / grid.w) - 0.5, (b.cy / grid.h) - 0.5);
+    arr.sort((a, b) => d(a) - d(b));
+  }
+  else if (order === 'scattered')
+    arr.sort((a, b) => hash(seed, a.id, 71) - hash(seed, b.id, 71));
+  // 'reading' is already the order buildBlocks sorts into: row by row, then down
+  arr.forEach((b, k) => { b.rank = k; });
+}
+
+function assemblyLength(fps){
+  if (!grid) return 0;
+  let m = 0;
+  for (const b of blocks)
+    m = Math.max(m, revealFrameFor(b, grid.cols, grid.rows, blocks.length, fps, C.get('seed')));
+  return m + C.get('entryFrames') + 1;
+}
+
+// How many frames make up "one full animation" — the count the PNG export walks.
+// Sequential has an exact period (every image laid down once, then it repeats).
+// Randomized never repeats — it assembles, then jitters forever — so we take the
+// assembly plus a tail of shuffle frames long enough to read as one full cycle.
+function loopLength(){
+  const fps = C.get('fps');
+  if (C.get('mode') === 'sweep'){
+    const n = Math.max(1, activePhotos().length);
+    const cycleLen = blocks.length + C.get('sweepHold');
+    return Math.max(1, n * cycleLen * C.get('tileBeat'));
+  }
+  const tail = Math.max(Math.round(fps * 2), C.get('holdFrames') * 4);
+  return Math.max(1, Math.ceil(assemblyLength(fps)) + tail);
+}
+
+// ── drawing ──────────────────────────────────────────────────────────────────
+function drawBlockPanel(g, b, p, entry, alpha, sc, dx, dy, cw, ch, rotJit = 0){
+  const list = activePhotos();
+  if (!list.length) return;
+  const img = list[clamp(entry, 0, list.length - 1)].img;
+  const fit = C.get('imageFit');
+  const ps = C.get('printScale');
+  pbx.save();
+  pbx.globalAlpha = alpha;
+  // Transform BEFORE clipping, so the tile's aperture moves with its content.
+  // Clip first and the image merely slides under a fixed window — every tile
+  // then reads as one rigid sheet. Moving both is what makes each tile look
+  // like its own scrap of paper, with the small gaps and overlaps to match.
+  pbx.translate(p.cx + dx, p.cy + dy);
+  pbx.rotate((p.rot * C.get('panelRotate') + rotJit) * Math.PI / 180);
+  pbx.scale(sc, sc);
+  pbx.translate(-p.cx, -p.cy);
+  pbx.clip(F.panelPath(g, p, C.get('tear'), 0.75));
+  if (fit === 'sheet'){
+    const w = cw * ps, h = ch * ps;
+    P.drawCover(pbx, img, (cw - w) / 2, (ch - h) / 2, w, h);
+  } else {
+    const w = b.w * ps * 1.04, h = b.h * ps * 1.04;
+    P.drawCover(pbx, img, b.cx - w / 2, b.cy - h / 2, w, h);
+  }
+  pbx.restore();
+}
+
+function render(){
+  const cw = canvas.width, ch = canvas.height;
+  const fps = C.get('fps');
+  const seed = C.get('seed');
+  const runMode = C.get('mode');
+  const cols = C.get('cols'), rows = C.get('rows');
+  // Sweep lays one image per grid cell. Merged blocks would span rows, so a
+  // block anchored in row 0 would fill part of row 1 before row 0 finished —
+  // which breaks the row-by-row read the mode exists to produce.
+  const sweepMode = runMode === 'sweep';
+  const grouping = sweepMode ? 0 : C.get('grouping');
+  const groupCap = sweepMode ? 1 : C.get('groupCap');
+  const key = [cols, rows, cw, ch, seed, C.get('gridJitter'), C.get('foldWaver'),
+               C.get('foldSkew'), grouping, groupCap,
+               sweepMode ? 'reading' : C.get('revealOrder')].join('|');
+  if (key !== gridKey){
+    grid = F.buildGrid({ cols, rows, w: cw, h: ch, seed,
+      gridJitter: C.get('gridJitter'), foldWaver: C.get('foldWaver'), foldSkew: C.get('foldSkew') });
+    blocks = F.buildBlocks(grid, seed, grouping, groupCap);
+    assignSweepRanks();
+    gridKey = key;
+  }
+  ensureSegments(blocks.length);
+
+  const lightAngle = C.get('lightAngle') * Math.PI / 180;
+  const ap = activePapers();
+  const paper = ap.length ? ap[Math.min(paperIndex, ap.length - 1)] : null;
+  const sampler = samplerFor(paper);
+
+  // ---- printed layer -------------------------------------------------------
+  if (printBuf.width !== cw || printBuf.height !== ch){ printBuf.width = cw; printBuf.height = ch; }
+  pbx.clearRect(0, 0, cw, ch);
+
+  const entryFrames = C.get('entryFrames');
+  const entryKind = C.get('entry');
+  const posJ = C.get('posJitter'), rotJ = C.get('rotJitter');
+  const pOff = C.get('panelOffset');
+
+  const coverage = runMode === 'sweep' ? 1 : C.get('coverage');
+  const covered = (b) => coverage >= 0.999 || hash(seed, b.id, 111) <= coverage;
+  drawnThisFrame = [];
+  if (trace) drawn = [];
+
+  if (runMode === 'sweep'){
+    // One image lays itself down tile by tile in strict order. Only when the
+    // LAST tile has landed (plus a hold) does the next image start over the top.
+    const n = activePhotos().length;
+    const tileBeat = C.get('tileBeat');
+    const cycleLen = blocks.length + C.get('sweepHold');
+    const tick = Math.floor(frame / tileBeat);
+    let cycle = Math.floor(tick / cycleLen);
+    let pos = tick % cycleLen;
+    // Settle on the final image rather than wrapping when Loop is off
+    if (!C.get('loop') && n > 1 && cycle >= n - 1){ cycle = n - 2; pos = cycleLen; }
+
+    for (const b of blocks){
+      if (!covered(b)) continue;
+      const laid = b.rank < pos;
+      // The sheet always starts FULL: at cycle 0 every tile already carries
+      // image 0 and the sweep lays image 1 over it. A tile is never blank.
+      const shownCycle = laid ? cycle + 1 : cycle;
+      const img = ((shownCycle % n) + n) % n;
+      drawnThisFrame.push([b.rank, img]);
+      if (trace) drawn.push([b.rank, img]);
+
+      const landedAt = ((laid ? cycle : cycle - 1) * cycleLen + b.rank) * tileBeat;
+      const since = Math.max(frame - landedAt, 0);
+      const ef = Math.min(entryFrames, tileBeat);
+      const e = ef > 0 ? clamp(since / ef, 0, 1) : 1;
+      const ee = easeOutCubic(e);
+
+      let alpha = 1, sc = 1, ex = 0, ey = 0;
+      if (entryKind === 'fade') alpha = ee;
+      else if (entryKind === 'grow'){ alpha = ee; sc = 0.82 + 0.18 * ee; }
+      else if (entryKind === 'slide'){
+        alpha = Math.min(1, ee * 1.4);
+        const dir = Math.floor(hash(seed, b.id, 93) * 4);
+        const d = (1 - ee) * Math.max(b.w, b.h) * 0.55;
+        if (dir === 0) ex = -d; else if (dir === 1) ex = d;
+        else if (dir === 2) ey = -d; else ey = d;
+      }
+      for (const p of b.panels){
+        const jx = shash(seed, p.idx * 3 + frame, 51) * posJ;
+        const jy = shash(seed, p.idx * 3 + frame, 52) * posJ;
+        const jr = shash(seed, p.idx * 5 + frame, 56) * rotJ;
+        drawBlockPanel(grid, b, p, img, alpha, sc,
+          p.offX * pOff + ex + jx, p.offY * pOff + ey + jy, cw, ch, jr);
+      }
+    }
+  } else {
+  for (const b of blocks){
+    const st = segments[b.id];
+    if (!st) continue;
+    if (!covered(b)) continue;
+
+    const revealAt = (runMode === 'shuffle')
+      ? 0 : revealFrameFor(b, cols, rows, blocks.length, fps, seed);
+    if (frame < revealAt) continue;
+
+    const since = Math.max(frame - Math.max(revealAt, st.entryAt), 0);
+    const e = entryFrames > 0 ? clamp(since / entryFrames, 0, 1) : 1;
+    const ee = easeOutCubic(e);
+
+    let alpha = 1, sc = 1, ex = 0, ey = 0;
+    if (entryKind === 'fade') alpha = ee;
+    else if (entryKind === 'grow'){ alpha = ee; sc = 0.82 + 0.18 * ee; }
+    else if (entryKind === 'slide'){
+      alpha = Math.min(1, ee * 1.4);
+      const dir = Math.floor(hash(seed, b.id, 93) * 4);
+      const d = (1 - ee) * Math.max(b.w, b.h) * 0.55;
+      if (dir === 0) ex = -d; else if (dir === 1) ex = d;
+      else if (dir === 2) ey = -d; else ey = d;
+    }
+
+    drawnThisFrame.push([b.rank, st.cur]);
+    if (trace) drawn.push([b.rank, st.cur]);
+    for (const p of b.panels){
+      const jx = shash(seed, p.idx * 3 + frame, 51) * posJ;
+      const jy = shash(seed, p.idx * 3 + frame, 52) * posJ;
+      const jr = shash(seed, p.idx * 5 + frame, 56) * rotJ;
+      drawBlockPanel(grid, b, p, st.cur, alpha, sc,
+        p.offX * pOff + ex + jx, p.offY * pOff + ey + jy, cw, ch, jr);
+    }
+  }
+  }
+
+  // press the print into the sheet
+  let layer = printBuf;
+  const distort = C.get('paperDistortion');
+  if (sampler && paper && distort > 0.001)
+    layer = P.reliefWarp(layer, sampler, paper.img, distort, C.get('paperScale'), cw, ch);
+  const uneven = C.get('unevenness');
+  if (uneven > 0.001)
+    layer = IMP.applyPrintWear(layer, { unevenness: uneven, seed }, cw, ch);
+
+  // ---- composite -----------------------------------------------------------
+  ctx.clearRect(0, 0, cw, ch);
+  const sh = IMP.shakeFor(seed, frame, C.get('cameraShake'));
+  ctx.save();
+  ctx.translate(cw/2 + sh.x, ch/2 + sh.y);
+  ctx.rotate(sh.r);
+  ctx.translate(-cw/2, -ch/2);
+
+  ctx.fillStyle = '#EDE9E0';
+  ctx.fillRect(0, 0, cw, ch);
+  if (paper) P.drawSheet(ctx, paper.img, C.get('paperScale'), cw, ch);
+
+  ctx.save();
+  ctx.globalCompositeOperation = C.get('printBlend');
+  ctx.globalAlpha = C.get('printOpacity');
+  ctx.drawImage(layer, 0, 0);
+  ctx.restore();
+
+  if (sampler && paper)
+    P.paintPaperLight(ctx, sampler, paper.img,
+      { lighting: C.get('paperLighting'), contrast: C.get('lightingContrast'),
+        paperScale: C.get('paperScale') }, cw, ch);
+
+  // Tone, lift and creases don't change between stop-motion beats — they're
+  // baked once into three layers and blitted.
+  F.paintFoldLayers(ctx, F.buildFoldLayers(grid, {
+    tone: C.get('panelTone'), highlight: C.get('creaseHighlight'),
+    shadow: C.get('creaseShadow'), width: C.get('creaseWidth'),
+    softness: C.get('creaseSoft'), variance: C.get('creaseVary'),
+    lift: C.get('panelLift'), lightAngle }));
+
+  ctx.restore();
+
+  IMP.paintGrainAndVignette(ctx, {
+    grain: C.get('filmGrain'), vignette: C.get('vignette'), frame }, cw, ch);
+
+  if (C.get('debugTiles')){
+    const shown = new Map(drawnThisFrame);
+    ctx.save();
+    ctx.font = `${Math.round(Math.min(cw, ch) / 26)}px ui-monospace, monospace`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const b of blocks){
+      const img = shown.has(b.rank) ? shown.get(b.rank) : '-';
+      const t = `${b.rank + 1}\u2009\u2192\u2009${img}`;
+      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,.9)';
+      ctx.strokeText(t, b.cx, b.cy);
+      ctx.fillStyle = '#B4746E';
+      ctx.fillText(t, b.cx, b.cy);
+    }
+    ctx.restore();
+  }
+
+  status();
+}
+
+function tick(ts){
+  const fps = C.get('fps');
+  if (!lastTs) lastTs = ts;
+  const dt = ts - lastTs; lastTs = ts;
+  if (playing){
+    accum += dt;
+    const step = 1000 / fps;
+    let guard = 0;
+    while (accum >= step && guard++ < 8){ accum -= step; advance(); dirty = true; }
+    if (guard >= 8) accum = 0;          // tab was backgrounded — don't catch up
+  }
+  if (dirty){ dirty = false; render(); }
+  requestAnimationFrame(tick);
+}
+
+const statusEl = document.getElementById('statusLine');
+function status(){
+  let extra = '';
+  if (C.get('mode') === 'sweep' && blocks.length && activePhotos().length){
+    const cycleLen = blocks.length + C.get('sweepHold');
+    const tick = Math.floor(frame / C.get('tileBeat'));
+    const pos = Math.min(blocks.length, tick % cycleLen);
+    extra = ` · tile ${pos}/${blocks.length}`;
+  }
+  statusEl.textContent =
+    `${grid ? grid.panels.length : 0} segments · ${activePhotos().length} images · ` +
+    `f${frame} @${C.get('fps')}fps${extra} · b${BUILD}`;
+}
+
+// ── sizing ───────────────────────────────────────────────────────────────────
+const sizeW = document.getElementById('sizeW');
+const sizeH = document.getElementById('sizeH');
+const sizePreset = document.getElementById('sizePreset');
+function applySize(){
+  const w = clamp(parseInt(sizeW.value) || 1080, 120, 4000);
+  const h = clamp(parseInt(sizeH.value) || 1920, 120, 4000);
+  C.setExtra('size', { w, h, preset: sizePreset.value });
+  canvas.width = w; canvas.height = h;
+  fitCanvas();
+  gridKey = '';
+  dirty = true;
+}
+function fitCanvas(){
+  const stage = document.getElementById('stage');
+  const pad = document.body.classList.contains('view-only') ? 0 : 88;
+  const aw = stage.clientWidth - pad, ah = stage.clientHeight - pad;
+  // Never let a zero-size measurement stick: a hidden or not-yet-laid-out stage
+  // would pin the canvas at 0px and it would stay there even once real space
+  // appeared, because nothing recomputes it.
+  if (aw <= 0 || ah <= 0) return;
+  const s = Math.min(aw / canvas.width, ah / canvas.height,
+                     document.body.classList.contains('view-only') ? 4 : 1.2);
+  canvas.style.width = Math.round(canvas.width * s) + 'px';
+  canvas.style.height = Math.round(canvas.height * s) + 'px';
+}
+sizeW.addEventListener('change', () => { sizePreset.value = 'custom'; applySize(); });
+sizeH.addEventListener('change', () => { sizePreset.value = 'custom'; applySize(); });
+sizePreset.addEventListener('change', () => {
+  if (sizePreset.value === 'custom') return;
+  const [w, h] = sizePreset.value.split('x');
+  sizeW.value = w; sizeH.value = h; applySize();
+});
+window.addEventListener('resize', fitCanvas);
+if (window.ResizeObserver)
+  new ResizeObserver(() => fitCanvas()).observe(document.getElementById('stage'));
+
+// ── actions ──────────────────────────────────────────────────────────────────
+const toastEl = document.getElementById('toast');
+const toastMsg = document.getElementById('toastMsg');
+const toastUndo = document.getElementById('toastUndo');
+let undoFn = null;
+const toast = (msg, undo) => {
+  toastMsg.textContent = msg;
+  undoFn = undo || null;
+  toastUndo.hidden = !undoFn;
+  toastEl.classList.add('on');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { toastEl.classList.remove('on'); undoFn = null; },
+                        undoFn ? 6000 : 2200);
+};
+toastUndo.addEventListener('click', () => {
+  if (!undoFn) return;
+  const fn = undoFn; undoFn = null;
+  toastEl.classList.remove('on');
+  fn();
+  toast('Restored');
+});
+
+C.onReset((label, before) => {
+  gridKey = ''; dirty = true;
+  toast(label + ' reset', () => { C.restore(before); gridKey = ''; dirty = true; });
+});
+
+const resetEverything = () => {
+  const before = C.snapshot();
+  C.resetAll();
+  gridKey = ''; resetTimeline();
+  toast('All controls reset', () => { C.restore(before); gridKey = ''; dirty = true; });
+};
+
+const SWEEP_LOCK = 'Locked in Sequential — a tile-by-tile reveal needs one image per cell';
+const SEQ_UNUSED = 'Not used in Sequential — pacing comes from Tile Beat and Sweep Hold';
+function syncModeLocks(){
+  const sweep = C.get('mode') === 'sweep';
+  C.setLocked('grouping', sweep, 0, SWEEP_LOCK);
+  C.setLocked('groupCap', sweep, 1, SWEEP_LOCK);
+  C.setLocked('coverage', sweep, 1, SWEEP_LOCK);
+  C.setLocked('revealOrder', sweep, 'reading', SWEEP_LOCK);
+  C.setLocked('shuffleMode', sweep, 'sequential', SEQ_UNUSED);
+  C.setLocked('holdFrames', sweep, 1, SEQ_UNUSED);
+  C.setLocked('holdJitter', sweep, 0, SEQ_UNUSED);
+  C.setLocked('swapChance', sweep, 1, SEQ_UNUSED);
+  C.setLocked('revealDuration', sweep, 0.1, SEQ_UNUSED);
+  C.setLocked('revealStagger', sweep, 0, SEQ_UNUSED);
+  gridKey = ''; dirty = true;
+}
+C.onChange('mode', syncModeLocks);
+syncModeLocks();
+
+C.onChange('reroll', () => C.set('seed', 1 + Math.floor(Math.random() * 9998)));
+C.onChange('resetAll2', resetEverything);
+document.getElementById('resetAll').addEventListener('click', resetEverything);
+['seed','cols','rows','revealOrder','revealStagger','revealDuration','mode','entry']
+  .forEach(k => C.onChange(k, resetTimeline));
+
+document.getElementById('btnReplay').addEventListener('click', () => { resetTimeline(); playing = true; syncPlay(); });
+const btnPlay = document.getElementById('btnPlay');
+function syncPlay(){ btnPlay.textContent = playing ? 'Pause' : 'Play'; }
+btnPlay.addEventListener('click', () => { playing = !playing; syncPlay(); });
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.code === 'Space'){ e.preventDefault(); playing = !playing; syncPlay(); }
+  if (e.key === 'r') { resetTimeline(); }
+});
+
+// ── sessions ────────────────────────────────────────────────────────────────
+// A published session owns its URL forever. Opening one puts the app in session
+// mode: edits are live but transient until Save writes them back to the same id.
+let session = null;            // { id, key, sig }
+const docNow = () => ({
+  settings: C.all(),
+  size: { w: canvas.width, h: canvas.height, preset: sizePreset.value },
+  photos
+});
+const isDirty = () => !!session && SESSION.signature(docNow()) !== session.sig;
+
+function markClean(){
+  if (session) session.sig = SESSION.signature(docNow());
+  syncSaveBtn();
+}
+// The footer's primary action must never read "Share" when Save is what's
+// wanted. Three states: no session, a session we can write to, and a session we
+// can only read (an editable link opened without its key, or one published
+// before edit keys existed) — where the honest action is to fork a copy.
+// In a session, the id IS the document's name — show it instead of the app name.
+function syncTitle(){
+  const h = document.querySelector('.panel-title h1');
+  if (h) h.textContent = session ? session.id : 'Paper Hi-Res';
+  document.title = session ? `${session.id} \u00b7 Paper Hi-Res`
+                           : 'Paper Hi-Res';
+}
+
+function syncSaveBtn(){
+  syncTitle();
+  const save = document.getElementById('btnSave');
+  const share = document.getElementById('btnShare');
+  if (!save || !share) return;
+  const owned = !!session && !!session.key;
+  const dirty = isDirty();
+
+  save.hidden = !owned;
+  share.hidden = false;
+
+  if (owned){
+    save.textContent = dirty ? 'Save *' : 'Saved';
+    save.classList.toggle('dirty', dirty);
+    save.disabled = !dirty;
+    share.textContent = 'Links';
+    share.title = 'Show this session\u2019s links';
+  } else if (session){
+    share.textContent = 'Save a copy';
+    share.title = 'This link can\u2019t overwrite its session \u2014 publish a new one';
+  } else {
+    share.textContent = 'Share';
+    share.removeAttribute('title');
+  }
+  document.body.classList.toggle('unsaved', dirty);
+}
+C.onAny(() => syncSaveBtn());
+
+// Leaving with unsaved edits throws them away, so say so.
+window.addEventListener('beforeunload', (e) => {
+  if (!isDirty()) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
+const shareModal = document.getElementById('shareModal');
+const shareBody = document.getElementById('shareBody');
+const closeShare = () => shareModal.classList.remove('on');
+document.getElementById('shareClose').addEventListener('click', closeShare);
+shareModal.addEventListener('click', (e) => { if (e.target === shareModal) closeShare(); });
+
+function urlRow(label, url, note){
+  const id = 'u' + Math.random().toString(36).slice(2, 8);
+  return `<div class="url-row">
+      <div class="url-label">${label}<span>${note}</span></div>
+      <div class="url-box"><input readonly value="${url}" id="${id}">
+        <button data-copy="${id}">Copy</button></div>
+    </div>`;
+}
+
+document.getElementById('btnSave').addEventListener('click', async () => {
+  if (!session || !session.key) return;
+  const btn = document.getElementById('btnSave');
+  btn.disabled = true; btn.textContent = 'Saving\u2026';
+  try {
+    await SESSION.save(session.id, session.key, SESSION.serialize(docNow()));
+    C.setBaseline(C.all());          // Reset now returns to what was just saved
+    markClean();
+    toast('Session saved');
+  } catch (err){
+    toast(err.message);
+    syncSaveBtn();
+  }
+});
+
+function showLinks(id, key, extraNote){
+  const base = SESSION.appBase();
+  shareBody.innerHTML =
+    urlRow('Editable', `${base}?s=${id}${key ? '&k=' + key : ''}`,
+           key ? 'dials open \u00b7 Save writes back here' : 'dials open \u00b7 cannot overwrite') +
+    urlRow('Play only', `${base}?v=${id}`, 'no panel, just the animation') +
+    `<p class="share-note">${extraNote}</p>`;
+  shareBody.querySelectorAll('[data-copy]').forEach(b =>
+    b.addEventListener('click', () => {
+      const inp = document.getElementById(b.dataset.copy);
+      inp.select();
+      navigator.clipboard.writeText(inp.value).then(() => {
+        b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy'; }, 1600);
+      });
+    }));
+}
+
+document.getElementById('btnShare').addEventListener('click', async () => {
+  // an owned session already has its links — don't mint a second one
+  if (session && session.key){
+    showLinks(session.id, session.key,
+      'These URLs are permanent. Save updates this session in place. The editable ' +
+      'link carries its edit key, so anyone you send it to can overwrite it; the ' +
+      'play-only link cannot.');
+    shareModal.classList.add('on');
+    return;
+  }
+  shareBody.innerHTML = `<p class="share-note">Packing session\u2026</p>`;
+  shareModal.classList.add('on');
+  try {
+    const payload = SESSION.serialize({
+      settings: C.all(),
+      size: { w: canvas.width, h: canvas.height, preset: sizePreset.value },
+      photos
+    });
+    const { id, key } = await SESSION.publish(payload);
+    session = { id, key, sig: SESSION.signature(docNow()) };
+    C.setBaseline(C.all());
+    C.setPersist(false);
+    // point the address bar at what was just published, so a reload reopens it
+    history.replaceState(null, '', `${location.pathname}?s=${id}&k=${key}`);
+    syncSaveBtn();
+    showLinks(id, key,
+      'These URLs are permanent \u2014 Save updates this session in place rather ' +
+      'than making a new one. The editable link carries its edit key, so anyone ' +
+      'you send it to can overwrite it; the play-only link cannot.');
+  } catch (err){
+    shareBody.innerHTML = `<p class="share-note err">${err.message}</p>`;
+  }
+});
+
+async function applySession(sess, mode, route){
+  // set the layout mode first — fitCanvas measures the stage, which is a
+  // different size once the panel is gone
+  if (mode === 'view') document.body.classList.add('view-only');
+  if (sess.size && Number.isFinite(sess.size.w)){
+    sizeW.value = sess.size.w; sizeH.value = sess.size.h;
+    if (sess.size.preset) sizePreset.value = sess.size.preset;
+    applySize();
+  }
+  photos = [];
+  for (const e of (sess.images || [])){
+    const src = (e.d !== undefined && DEMO[e.d]) ? DEMO[e.d] : e.u;
+    if (!src) continue;
+    try {
+      const img = await P.loadImage(src);
+      photos.push({ src, img, on: e.on !== false, demo: e.d !== undefined, demoIndex: e.d });
+    } catch { /* skip */ }
+  }
+  C.setExtra('demoDismissed', true);
+  for (const k in (sess.settings || {})) C.set(k, sess.settings[k]);
+  // Reset now returns to the session, not to the app defaults
+  C.setBaseline(sess.settings || {});
+  refreshStrips();
+  gridKey = ''; resetTimeline();
+  fitCanvas();
+  // edits from here are transient until Save
+  C.setPersist(false);
+  session = { id: route.id, key: route.key || '', sig: '' };
+  markClean();
+}
+
+// ── PNG export: every frame of one full loop, numbered, in a single .zip ───────
+// Many separate downloads trip the browser's multi-file blocker, so the frames
+// are packed into one store-only zip (PNGs are already compressed) and handed
+// over as a single file.
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++){
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(buf){
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function zipStore(files){
+  const enc = new TextEncoder();
+  const u16 = n => new Uint8Array([n & 255, (n >> 8) & 255]);
+  const u32 = n => new Uint8Array([n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255]);
+  const cat = (...a) => { const o = []; for (const x of a) o.push(...x); return new Uint8Array(o); };
+  const parts = [], central = [];
+  let offset = 0;
+  for (const f of files){
+    const name = enc.encode(f.name);
+    const crc = crc32(f.data), size = f.data.length;
+    const local = cat(u32(0x04034b50), u16(20), u16(0), u16(0), u16(0), u16(0),
+      u32(crc), u32(size), u32(size), u16(name.length), u16(0), name);
+    parts.push(local, f.data);
+    central.push(cat(u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0),
+      u32(crc), u32(size), u32(size), u16(name.length), u16(0), u16(0), u16(0), u16(0),
+      u32(0), u32(offset), name));
+    offset += local.length + size;
+  }
+  let cdSize = 0;
+  for (const c of central){ parts.push(c); cdSize += c.length; }
+  parts.push(cat(u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length),
+    u32(cdSize), u32(offset), u16(0)));
+  return new Blob(parts, { type: 'application/zip' });
+}
+
+let exporting = false;
+document.getElementById('btnExport').addEventListener('click', async () => {
+  if (exporting) return;
+  if (!blocks.length || !activePhotos().length){ toast('Nothing to export yet'); return; }
+  const btn = document.getElementById('btnExport');
+  const label = btn.textContent;
+  exporting = true; btn.disabled = true;
+  const seed = C.get('seed');
+  // Rewind to a clean start, then step frame-by-frame off the render loop.
+  const snap = { playing, frame, accum, paperIndex, segments };
+  playing = false;
+  try {
+    const total = Math.max(1, Math.round(loopLength()));
+    frame = 0; accum = 0; paperIndex = 0; segments = [];
+    // A stop-motion loop holds on the same picture for many beats, so most frames
+    // are byte-for-byte repeats. Keep only frames whose pixels differ from the
+    // last kept one, then number the survivors consecutively.
+    const kept = [];
+    const seen = new Set();
+    for (let i = 0; i < total; i++){
+      if (i > 0) advance();
+      dirty = false; render();
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+      const data = new Uint8Array(await blob.arrayBuffer());
+      const key = crc32(data) + ':' + data.length;
+      if (!seen.has(key)){ seen.add(key); kept.push(data); }
+      btn.textContent = `${i + 1}/${total}`;
+      if ((i & 3) === 0) await new Promise(r => setTimeout(r));   // let the label repaint
+    }
+    const pad = String(kept.length).length;
+    const files = kept.map((data, i) => ({
+      name: `frame_${String(i).padStart(pad, '0')}.png`, data }));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(zipStore(files));
+    a.download = `paper-shuffle-${seed}.zip`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 8000);
+    toast(`${kept.length} frames saved`);
+  } catch (err){
+    console.error(err);
+    toast('Export failed');
+  } finally {
+    // restore the live timeline exactly where it was
+    playing = snap.playing; frame = snap.frame; accum = snap.accum;
+    paperIndex = snap.paperIndex; segments = snap.segments;
+    btn.textContent = label; btn.disabled = false; exporting = false;
+    dirty = true;
+  }
+});
+
+const filePick = document.createElement('input');
+filePick.type = 'file'; filePick.accept = 'image/*'; filePick.multiple = true;
+filePick.addEventListener('change', () => {
+  addUserPhotos([...filePick.files].map(f => URL.createObjectURL(f)));
+  filePick.value = '';
+});
+C.onChange('addPhotos', () => filePick.click());
+
+// Explicit escape hatch: bring the placeholders back and let them persist again.
+C.onChange('resetPhotos', async () => {
+  const before = photos.slice();
+  photos = []; refreshStrips();
+  await addSources(photos, DEMO, true);
+  C.setExtra('demoDismissed', false);
+  resetTimeline();
+  toast('Demo set loaded', () => {
+    photos = before; C.setExtra('demoDismissed', !before.some(p => p.demo));
+    refreshStrips(); resetTimeline();
+  });
+});
+
+C.onChange('clearPhotos', () => {
+  if (!photos.length) return toast('Nothing to clear');
+  const before = photos.slice();
+  const n = before.length;
+  photos = [];
+  C.setExtra('demoDismissed', true);
+  refreshStrips(); resetTimeline();
+  toast(`${n} image${n === 1 ? '' : 's'} cleared`, () => {
+    photos = before;
+    C.setExtra('demoDismissed', !before.some(p => p.demo));
+    refreshStrips(); resetTimeline();
+  });
+});
+
+const veil = document.getElementById('dropVeil');
+let dragDepth = 0;
+window.addEventListener('dragenter', e => { e.preventDefault(); if (++dragDepth === 1) veil.classList.add('on'); });
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('dragleave', e => { if (--dragDepth <= 0){ dragDepth = 0; veil.classList.remove('on'); } });
+window.addEventListener('drop', async e => {
+  e.preventDefault(); dragDepth = 0; veil.classList.remove('on');
+  const files = [...(e.dataTransfer?.files || [])].filter(f => f.type.startsWith('image/'));
+  if (!files.length) return;
+  await addUserPhotos(files.map(f => URL.createObjectURL(f)));
+});
+
+// Debug handle — the preview pane backgrounds the page, which freezes rAF, so
+// verification needs to drive frames by hand.
+window.__ps = {
+  render, canvas, C,
+  step(n = 1){ for (let i = 0; i < n; i++){ advance(); render(); } },
+  goto(f){ resetTimeline(); this.step(f); },
+  info(){ return { frame, panels: grid ? grid.panels.length : 0,
+                   photos: activePhotos().length, papers: activePapers().length,
+                   playing }; },
+  pause(){ playing = false; },
+  setTrace(v){ trace = !!v; },
+  drawn(){ return drawn.slice().sort((a, b) => a[0] - b[0]); },
+  blocks(){ return blocks.map(b => ({ id: b.id, rank: b.rank, i: b.i, j: b.j })); }
+};
+
+// ── boot ─────────────────────────────────────────────────────────────────────
+(async function boot(){
+  const size = C.getExtra('size');
+  if (size && Number.isFinite(size.w) && Number.isFinite(size.h)){
+    sizeW.value = clamp(size.w, 120, 4000);
+    sizeH.value = clamp(size.h, 120, 4000);
+    if (size.preset) sizePreset.value = size.preset;
+  }
+  applySize();
+  syncPlay();
+  requestAnimationFrame(tick);
+  const route = SESSION.routeOf();
+  await addSources(papers, PAPERS, false);
+  if (route){
+    try {
+      await applySession(await SESSION.load(route.id), route.mode, route);
+    } catch (err){
+      toast(err.message);
+      await addSources(photos, DEMO, true);
+    }
+  } else if (!C.getExtra('demoDismissed')){
+    await addSources(photos, DEMO, true);
+  }
+  resetTimeline();
+  fitCanvas();
+})();
+
+})();
+</script>
+</body>
+</html>
