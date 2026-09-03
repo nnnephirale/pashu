@@ -4,7 +4,9 @@
 // snaps back to the schema defaults and drops the stored copy. Stored values are
 // re-validated against the schema on load, so a stale store from an older build
 // can never brick the panel — anything that doesn't fit is silently dropped.
-const STORE_KEY = 'paperimgshuffle.settings.v1';
+// Namespaced per clone so stopmotion settings don't collide with pashu/highres
+// on a shared origin.
+const STORE_KEY = 'paperimgshuffle.stopmotion.settings.v1';
 
 const listeners = {};
 const anyListeners = [];

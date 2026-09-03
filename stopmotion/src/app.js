@@ -63,8 +63,8 @@ const schema = [
 
   { type:'section', label:'Paper & Environment', collapsed:true },
   { type:'custom', render:() => paperStrip },
-  { type:'segmented', key:'paperSwapMode', label:'Swap', default:'random', options:[
-      {id:'sequential',label:'Sequential'},{id:'random',label:'Random'},{id:'hold',label:'Hold'}] },
+  { type:'segmented', key:'paperSwapMode', label:'Paper', default:'perimage', options:[
+      {id:'single',label:'One Paper'},{id:'perimage',label:'Per Image'}] },
   { type:'slider', key:'paperScale', label:'Paper Scale', min:0.5, max:3, step:0.05, default:1.15 },
   { type:'slider', key:'paperDistortion', label:'Paper Distortion', min:0, max:3, step:0.05, default:0.9 },
   { type:'slider', key:'paperLighting', label:'Paper Lighting', min:0, max:2, step:0.05, default:0.85 },
@@ -121,6 +121,10 @@ function renderStrip(strip, list, onToggle, onRemove){
   list.forEach((it, i) => {
     const d = document.createElement('div');
     d.className = 'thumb' + (it.on ? '' : ' off');
+    // Hover shows the on-disk filename (e.g. paper_3.png) so it's clear which
+    // base file to edit. Only meaningful for the linked assets, not uploads.
+    const file = /\/assets\//.test(it.src) ? it.src.split('?')[0].split('/').pop() : '';
+    if (file) d.title = file;
     d.innerHTML = `<img src="${it.src}" alt=""><span class="x">×</span>`;
     d.querySelector('.x').addEventListener('click', (e) => { e.stopPropagation(); onRemove(i); });
     d.addEventListener('click', () => onToggle(i));
@@ -226,15 +230,8 @@ function revealFrameFor(p, cols, rows, total, fps, seed){
 function advance(){
   frame++;
   const seed = C.get('seed');
-  const ap = activePapers();
-  const mode = C.get('paperSwapMode');
-  if (ap.length > 1 && mode !== 'hold'){
-    if (mode === 'random'){
-      let next = Math.floor(mulberry32((seed + frame * 131) >>> 0)() * ap.length);
-      if (next === paperIndex) next = (next + 1) % ap.length;
-      paperIndex = next;
-    } else paperIndex = frame % ap.length;
-  } else if (ap.length <= 1) paperIndex = 0;
+  // Paper selection happens in render(): "One Paper" holds; "Per Image" picks a
+  // fresh un-muted paper whenever the shown subject changes.
 
   // segment shuffling
   const n = activePhotos().length;
@@ -535,6 +532,19 @@ function drawCollage(ctx, cw, ch, seed){
   ctx.restore();
 }
 
+// Which subject is on screen right now — so "Per Image" paper changes in step
+// with it. Sequential: the sweep's current cycle. Randomized: the current image.
+function currentImageId(){
+  if (C.get('mode') === 'sweep'){
+    const tileBeat = C.get('tileBeat');
+    const step = C.get('entry') === 'snap'
+      ? Math.max(1, tileBeat) : Math.max(1, tileBeat, C.get('entryFrames'));
+    const cycleLen = Math.max(1, blocks.length + C.get('sweepHold'));
+    return Math.floor(Math.floor(frame / step) / cycleLen);
+  }
+  return segments[0] ? segments[0].cur : 0;
+}
+
 function render(){
   const cw = canvas.width, ch = canvas.height;
   const fps = C.get('fps');
@@ -561,7 +571,17 @@ function render(){
 
   const lightAngle = C.get('lightAngle') * Math.PI / 180;
   const ap = activePapers();
-  const paper = ap.length ? ap[Math.min(paperIndex, ap.length - 1)] : null;
+  // Paper: "One Paper" holds the current (first un-muted) sheet; "Per Image"
+  // maps each shown subject to one of the un-muted papers, so the sheet changes
+  // whenever the subject does.
+  if (ap.length){
+    if (C.get('paperSwapMode') === 'perimage'){
+      const imgId = currentImageId();
+      paperIndex = Math.floor(hash(seed, imgId + 1, 55) * ap.length) % ap.length;
+    }
+    paperIndex = Math.min(paperIndex, ap.length - 1);
+  }
+  const paper = ap.length ? ap[paperIndex] : null;
   const sampler = samplerFor(paper);
 
   // ---- printed layer -------------------------------------------------------

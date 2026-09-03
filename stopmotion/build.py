@@ -46,6 +46,15 @@ def collect(dirname, pattern):
     return [data_uri(os.path.join(dirname, f)) for f in files]
 
 
+def link_list(dirname, pattern, urlprefix):
+    """Link assets by URL instead of embedding them, so editing a file on disk
+    and refreshing the page shows the change immediately."""
+    files = sorted(
+        (f for f in os.listdir(dirname) if pattern.match(f)),
+        key=lambda f: int(pattern.match(f).group(1)))
+    return ['%s/%s' % (urlprefix, f) for f in files]
+
+
 def bundle():
     """Concatenate the ES modules into one classic script.
 
@@ -86,8 +95,12 @@ def bundle():
 def main():
     js = bundle()
 
-    demo = collect(os.path.join(ASSETS, 'demo'), re.compile(r'demo_(\d+)\.jpg$'))
-    paper = collect(os.path.join(ASSETS, 'paper/web'), re.compile(r'paper_(\d+)\.jpg$'))
+    # Linked, not embedded: point at the shared high-res paper PNGs (and the demo
+    # photos) by relative URL, so editing a PNG on disk shows up on refresh.
+    demo = link_list(os.path.join(ASSETS, 'demo'),
+                     re.compile(r'demo_(\d+)\.jpg$'), '../assets/demo')
+    paper = link_list(os.path.join(ASSETS, 'paper'),
+                      re.compile(r'paper_(\d+)\.png$'), '../assets/paper')
     if not demo or not paper:
         sys.exit('build: no assets found in %s' % ASSETS)
 

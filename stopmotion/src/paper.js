@@ -6,10 +6,19 @@ const SAMPLE_W = 220;
 const sampleBuf = document.createElement('canvas');
 const sbx = sampleBuf.getContext('2d', { willReadFrequently: true });
 
+// Assets are linked from disk (not embedded) so editing a paper PNG and
+// refreshing shows the change. Over http(s) we stamp a per-load token to defeat
+// the browser image cache and mark them crossOrigin so the canvas stays usable;
+// over file:// we skip both. crossOrigin is NEVER set on blob:/data: uploads —
+// that makes some browsers refuse to decode them ("could not read those files").
+const LOAD_BUST = Date.now();
 export function loadImage(src){
+  const isAsset = /^(\.\.\/)?assets\//.test(src);
+  const isHttp = location.protocol.startsWith('http');
+  if (isAsset && isHttp) src += (src.includes('?') ? '&' : '?') + 'v=' + LOAD_BUST;
   return new Promise((res, rej) => {
     const im = new Image();
-    im.crossOrigin = 'anonymous';
+    if (isAsset && isHttp) im.crossOrigin = 'anonymous';
     im.onload = () => res(im);
     im.onerror = rej;
     im.src = src;
