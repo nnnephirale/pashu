@@ -595,15 +595,27 @@ function drawCollage(ctx, cw, ch, seed){
 
 // Which subject is on screen right now — so "Per Image" paper changes in step
 // with it. Sequential: the sweep's current cycle. Randomized: the current image.
+// A GIF counts each of its frames as its own "image", so the paper can change
+// per frame just like it does per uploaded still.
 function currentImageId(){
+  const list = activePhotos();
+  let base, photo;
   if (C.get('mode') === 'sweep'){
     const tileBeat = C.get('tileBeat');
     const step = C.get('entry') === 'snap'
       ? Math.max(1, tileBeat) : Math.max(1, tileBeat, C.get('entryFrames'));
     const cycleLen = Math.max(1, blocks.length + C.get('sweepHold'));
-    return Math.floor(Math.floor(frame / step) / cycleLen);
+    base = Math.floor(Math.floor(frame / step) / cycleLen);
+    photo = list.length ? list[((base % list.length) + list.length) % list.length] : null;
+  } else {
+    base = segments[0] ? segments[0].cur : 0;
+    photo = list[clamp(base, 0, Math.max(0, list.length - 1))];
   }
-  return segments[0] ? segments[0].cur : 0;
+  if (photo && photo.isGif && photo.gif){
+    const n = photo.gif.frames.length;
+    return base * 100000 + (((frame % n) + n) % n);   // distinct id per GIF frame
+  }
+  return base;
 }
 
 function render(){
