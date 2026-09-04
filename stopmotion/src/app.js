@@ -74,6 +74,7 @@ const schema = [
   { type:'slider', key:'fps', label:'FPS', min:1, max:30, step:1, default:6 },
   { type:'slider', key:'gifSampleFps', label:'GIF Frames/s', min:1, max:30, step:1, default:8 },
   { type:'slider', key:'exportSecs', label:'Export Length', min:1, max:30, step:1, default:6, unit:'s' },
+  { type:'slider', key:'mp4Loops', label:'MP4 Loops', min:1, max:10, step:1, default:1, unit:'x' },
   { type:'slider', key:'tileBeat', label:'Tile Beat', min:1, max:12, step:1, default:1, unit:'f' },
   { type:'slider', key:'sweepHold', label:'Sweep Hold', min:0, max:40, step:1, default:6, unit:'f' },
   { type:'select', key:'entry', label:'Entry', default:'snap', options:[
@@ -1304,18 +1305,24 @@ async function exportMp4(){
     });
     encoder.configure({ codec, width: W, height: H, bitrate, framerate: fps });
 
-    const total = Math.max(1, Math.round(C.get('exportSecs') * C.get('fps')));
-    frame = 0; accum = 0; paperIndex = 0; segments = [];
+    const window = Math.max(1, Math.round(C.get('exportSecs') * C.get('fps')));
+    const loops = Math.max(1, Math.round(C.get('mp4Loops')));
     const durUs = Math.round(1e6 / fps);
-    for (let i = 0; i < total; i++){
-      if (i > 0) advance();
-      dirty = false; render();
-      tctx.drawImage(canvas, 0, 0, W, H);
-      const vf = new VideoFrame(tmp, { timestamp: i * durUs, duration: durUs });
-      encoder.encode(vf, { keyFrame: i % 30 === 0 });
-      vf.close();
-      btn.textContent = `${i + 1}/${total}`;
-      if (encoder.encodeQueueSize > 6) await new Promise(r => setTimeout(r));
+    let out = 0;
+    // Encode the same window `loops` times — reset the timeline each pass so the
+    // repeats are identical, making the MP4 play the loop that many times.
+    for (let L = 0; L < loops; L++){
+      frame = 0; accum = 0; paperIndex = 0; segments = [];
+      for (let i = 0; i < window; i++){
+        if (i > 0) advance();
+        dirty = false; render();
+        tctx.drawImage(canvas, 0, 0, W, H);
+        const vf = new VideoFrame(tmp, { timestamp: out * durUs, duration: durUs });
+        encoder.encode(vf, { keyFrame: out % 30 === 0 });
+        vf.close(); out++;
+        btn.textContent = `${out}/${window * loops}`;
+        if (encoder.encodeQueueSize > 6) await new Promise(r => setTimeout(r));
+      }
     }
     await encoder.flush();
     muxer.finalize();
