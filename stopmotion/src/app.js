@@ -191,6 +191,17 @@ async function addUserPhotos(files){
   }
   refreshStrips();
   C.setExtra('demoDismissed', true);
+  // Match the sheet to the (first) added image exactly, so a pasted/uploaded
+  // picture defines the output size.
+  const firstNew = photos[before];
+  if (firstNew && firstNew.img){
+    const iw = firstNew.img.naturalWidth || firstNew.img.width;
+    const ih = firstNew.img.naturalHeight || firstNew.img.height;
+    if (iw && ih){
+      sizeW.value = clamp(iw, 120, 4000); sizeH.value = clamp(ih, 120, 4000);
+      sizePreset.value = 'custom'; applySize();
+    }
+  }
   resetTimeline();
   if (!n) toast('Could not read those files');
   else toast(hadDemo ? `${n} added · placeholders cleared` : `${n} added`);
@@ -1355,6 +1366,16 @@ window.addEventListener('drop', async e => {
   e.preventDefault(); dragDepth = 0; veil.classList.remove('on');
   const files = [...(e.dataTransfer?.files || [])].filter(f => f.type.startsWith('image/'));
   if (!files.length) return;
+  await addUserPhotos(files);
+});
+
+// Cmd/Ctrl+V pastes an image straight in (and the sheet resizes to match it).
+window.addEventListener('paste', async e => {
+  const items = [...(e.clipboardData?.items || [])];
+  const files = items.filter(it => it.type.startsWith('image/'))
+                     .map(it => it.getAsFile()).filter(Boolean);
+  if (!files.length) return;                 // no image on the clipboard — let paste be
+  e.preventDefault();
   await addUserPhotos(files);
 });
 
