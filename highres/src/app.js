@@ -84,6 +84,7 @@ const schema = [
 
   { type:'section', label:'Animation & Stop-Motion', collapsed:false },
   { type:'slider', key:'fps', label:'FPS', min:1, max:30, step:1, default:6 },
+  { type:'slider', key:'exportSecs', label:'Export Length', min:1, max:30, step:1, default:6, unit:'s' },
   { type:'slider', key:'tileBeat', label:'Tile Beat', min:1, max:12, step:1, default:1, unit:'f' },
   { type:'slider', key:'sweepHold', label:'Sweep Hold', min:0, max:40, step:1, default:6, unit:'f' },
   { type:'slider', key:'revealDuration', label:'Reveal', min:0.1, max:10, step:0.1, default:1.8, unit:'s' },
@@ -940,7 +941,7 @@ async function exportPngs(){
   const snap = { playing, frame, accum, paperIndex, segments };
   playing = false;
   try {
-    const total = Math.max(1, Math.round(loopLength()));
+    const total = Math.max(1, Math.round(C.get('exportSecs') * C.get('fps')));
     frame = 0; accum = 0; paperIndex = 0; segments = [];
     const kept = [];
     const seen = new Set();
@@ -1029,7 +1030,7 @@ async function exportMp4(){
     });
     encoder.configure({ codec, width: W, height: H, bitrate, framerate: fps });
 
-    const total = Math.max(1, Math.round(loopLength()));
+    const total = Math.max(1, Math.round(C.get('exportSecs') * C.get('fps')));
     frame = 0; accum = 0; paperIndex = 0; segments = [];
     const durUs = Math.round(1e6 / fps);
     for (let i = 0; i < total; i++){
@@ -1086,7 +1087,7 @@ async function exportGif(){
     const gcx = gcv.getContext('2d', { willReadFrequently: true });
     const gif = GIFEncoder();
     const baseDelay = Math.max(20, Math.round(1000 / C.get('fps')));
-    const total = Math.max(1, Math.round(loopLength()));
+    const total = Math.max(1, Math.round(C.get('exportSecs') * C.get('fps')));
     frame = 0; accum = 0; paperIndex = 0; segments = [];
     let prevKey = null, prevData = null, run = 0, written = 0;
     const flush = () => {
