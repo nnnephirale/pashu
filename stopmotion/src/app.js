@@ -1334,7 +1334,74 @@ async function exportMp4(){
   }
 }
 
-// Export button opens a small menu: PNGs or MP4.
+// Looping GIF via gifenc — the full loop rendered offline at a capped size, with
+// identical consecutive frames collapsed into a single frame + longer delay so
+// the file stays small. gifenc writes an infinite-loop extension by default.
+let gifencMod = null;
+const loadGifenc = async () =>
+  (gifencMod ||= await import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js'));
+
+async function exportGif(){
+  if (exporting) return;
+  if (!blocks.length || !activePhotos().length){ toast('Nothing to export yet'); return; }
+  const btn = document.getElementById('btnExport');
+  const label = btn.textContent;
+  exporting = true; btn.disabled = true;
+  const seed = C.get('seed');
+  const snap = { playing, frame, accum, paperIndex, segments };
+  playing = false;
+  try {
+    btn.textContent = 'GIF…';
+    const { GIFEncoder, quantize, applyPalette } = await loadGifenc();
+    const scale = Math.min(1, 640 / Math.max(canvas.width, canvas.height));
+    const gw = Math.max(1, Math.round(canvas.width * scale));
+    const gh = Math.max(1, Math.round(canvas.height * scale));
+    const gcv = document.createElement('canvas');
+    gcv.width = gw; gcv.height = gh;
+    const gcx = gcv.getContext('2d', { willReadFrequently: true });
+    const gif = GIFEncoder();
+    const baseDelay = Math.max(20, Math.round(1000 / C.get('fps')));
+    const total = Math.max(1, Math.round(loopLength()));
+    frame = 0; accum = 0; paperIndex = 0; segments = [];
+    let prevKey = null, prevData = null, run = 0, written = 0;
+    const flush = () => {
+      if (!prevData) return;
+      const palette = quantize(prevData, 256, { format: 'rgb565' });
+      const index = applyPalette(prevData, palette, 'rgb565');
+      gif.writeFrame(index, gw, gh, { palette, delay: run * baseDelay, repeat: 0 });
+      written++;
+    };
+    for (let i = 0; i < total; i++){
+      if (i > 0) advance();
+      dirty = false; render();
+      gcx.clearRect(0, 0, gw, gh);
+      gcx.drawImage(canvas, 0, 0, gw, gh);
+      const data = gcx.getImageData(0, 0, gw, gh).data;
+      const key = crc32(data) + ':' + data.length;
+      if (key === prevKey) run++;
+      else { flush(); prevData = data; prevKey = key; run = 1; }
+      btn.textContent = `${i + 1}/${total}`;
+      if ((i & 3) === 0) await new Promise(r => setTimeout(r));
+    }
+    flush();
+    gif.finish();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([gif.bytes()], { type: 'image/gif' }));
+    a.download = `paper-shuffle-${seed}.gif`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 8000);
+    toast(`GIF saved · ${written} frames`);
+  } catch (err){
+    console.error(err);
+    toast('GIF export failed');
+  } finally {
+    playing = snap.playing; frame = snap.frame; accum = snap.accum;
+    paperIndex = snap.paperIndex; segments = snap.segments;
+    btn.textContent = label; btn.disabled = false; exporting = false; dirty = true;
+  }
+}
+
+// Export button opens a small menu: PNGs, MP4 or GIF.
 const btnExportEl = document.getElementById('btnExport');
 const foot = btnExportEl.closest('.panel-foot') || btnExportEl.parentElement;
 foot.style.position = 'relative';
@@ -1344,7 +1411,8 @@ exportMenu.style.cssText = 'position:absolute; bottom:calc(100% + 8px); display:
   'border-radius:12px; box-shadow:0 14px 34px rgba(0,0,0,.18); padding:6px; z-index:60;';
 exportMenu.innerHTML =
   '<button data-x="png" style="all:unset;cursor:pointer;padding:8px 12px;border-radius:8px;font:inherit">PNGs</button>' +
-  '<button data-x="mp4" style="all:unset;cursor:pointer;padding:8px 12px;border-radius:8px;font:inherit">MP4</button>';
+  '<button data-x="mp4" style="all:unset;cursor:pointer;padding:8px 12px;border-radius:8px;font:inherit">MP4</button>' +
+  '<button data-x="gif" style="all:unset;cursor:pointer;padding:8px 12px;border-radius:8px;font:inherit">GIF</button>';
 foot.appendChild(exportMenu);
 const closeExportMenu = () => { exportMenu.style.display = 'none'; };
 btnExportEl.addEventListener('click', (e) => {
@@ -1357,7 +1425,7 @@ exportMenu.addEventListener('click', (e) => {
   const x = e.target && e.target.dataset && e.target.dataset.x;
   if (!x) return;
   closeExportMenu();
-  if (x === 'png') exportPngs(); else exportMp4();
+  if (x === 'png') exportPngs(); else if (x === 'mp4') exportMp4(); else exportGif();
 });
 exportMenu.addEventListener('mouseover', (e) => {
   if (e.target.dataset && e.target.dataset.x) e.target.style.background = 'rgba(0,0,0,.05)';

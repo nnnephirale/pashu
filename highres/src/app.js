@@ -928,22 +928,20 @@ function zipStore(files){
 }
 
 let exporting = false;
-document.getElementById('btnExport').addEventListener('click', async () => {
+
+// PNGs: one full loop rendered offline, deduped, packed into a numbered zip.
+async function exportPngs(){
   if (exporting) return;
   if (!blocks.length || !activePhotos().length){ toast('Nothing to export yet'); return; }
   const btn = document.getElementById('btnExport');
   const label = btn.textContent;
   exporting = true; btn.disabled = true;
   const seed = C.get('seed');
-  // Rewind to a clean start, then step frame-by-frame off the render loop.
   const snap = { playing, frame, accum, paperIndex, segments };
   playing = false;
   try {
     const total = Math.max(1, Math.round(loopLength()));
     frame = 0; accum = 0; paperIndex = 0; segments = [];
-    // A stop-motion loop holds on the same picture for many beats, so most frames
-    // are byte-for-byte repeats. Keep only frames whose pixels differ from the
-    // last kept one, then number the survivors consecutively.
     const kept = [];
     const seen = new Set();
     for (let i = 0; i < total; i++){
@@ -954,7 +952,7 @@ document.getElementById('btnExport').addEventListener('click', async () => {
       const key = crc32(data) + ':' + data.length;
       if (!seen.has(key)){ seen.add(key); kept.push(data); }
       btn.textContent = `${i + 1}/${total}`;
-      if ((i & 3) === 0) await new Promise(r => setTimeout(r));   // let the label repaint
+      if ((i & 3) === 0) await new Promise(r => setTimeout(r));
     }
     const pad = String(kept.length).length;
     const files = kept.map((data, i) => ({
@@ -969,13 +967,198 @@ document.getElementById('btnExport').addEventListener('click', async () => {
     console.error(err);
     toast('Export failed');
   } finally {
-    // restore the live timeline exactly where it was
     playing = snap.playing; frame = snap.frame; accum = snap.accum;
     paperIndex = snap.paperIndex; segments = snap.segments;
     btn.textContent = label; btn.disabled = false; exporting = false;
     dirty = true;
   }
+}
+
+// MP4 via WebCodecs (H.264) + mp4-muxer — the full loop rendered OFFLINE, encoded
+// and muxed into a clean, seekable MP4 (avoids MediaRecorder's fragmented output).
+let mp4muxerMod = null;
+const loadMp4Muxer = async () =>
+  (mp4muxerMod ||= await import('https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/+esm'));
+
+async function exportMp4(){
+  if (exporting) return;
+  if (!blocks.length || !activePhotos().length){ toast('Nothing to export yet'); return; }
+  if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined'){
+    toast('MP4 not supported in this browser'); return;
+  }
+  const btn = document.getElementById('btnExport');
+  const label = btn.textContent;
+  const seed = C.get('seed');
+  const fps = C.get('fps');
+  exporting = true; btn.disabled = true; btn.textContent = 'MP4…';
+  const snap = { playing, frame, accum, paperIndex, segments };
+  playing = false;
+  try {
+    const { Muxer, ArrayBufferTarget } = await loadMp4Muxer();
+    // Pick an H.264 level that supports the frame size; downscale only if even the
+    // top level can't (e.g. a very large sheet).
+    const bitrate = 12_000_000;
+    const levels = ['avc1.640034', 'avc1.640033', 'avc1.64002a', 'avc1.640028', 'avc1.4d0028'];
+    const pick = async (w, h) => {
+      for (const codec of levels){
+        try {
+          const s = await VideoEncoder.isConfigSupported({ codec, width: w, height: h, bitrate, framerate: fps });
+          if (s.supported) return codec;
+        } catch { /* try next level */ }
+      }
+      return null;
+    };
+    let W = canvas.width & ~1, H = canvas.height & ~1;
+    let codec = await pick(W, H);
+    while (!codec && W > 320){
+      W = Math.round(W / 2) & ~1; H = Math.round(H / 2) & ~1;
+      codec = await pick(W, H);
+    }
+    if (!codec) throw new Error('MP4 not supported at this size');
+
+    const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H;
+    const tctx = tmp.getContext('2d');
+    const muxer = new Muxer({
+      target: new ArrayBufferTarget(),
+      video: { codec: 'avc', width: W, height: H },
+      fastStart: 'in-memory',
+    });
+    const encoder = new VideoEncoder({
+      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+      error: (e) => console.error('VideoEncoder', e),
+    });
+    encoder.configure({ codec, width: W, height: H, bitrate, framerate: fps });
+
+    const total = Math.max(1, Math.round(loopLength()));
+    frame = 0; accum = 0; paperIndex = 0; segments = [];
+    const durUs = Math.round(1e6 / fps);
+    for (let i = 0; i < total; i++){
+      if (i > 0) advance();
+      dirty = false; render();
+      tctx.drawImage(canvas, 0, 0, W, H);
+      const vf = new VideoFrame(tmp, { timestamp: i * durUs, duration: durUs });
+      encoder.encode(vf, { keyFrame: i % 30 === 0 });
+      vf.close();
+      btn.textContent = `${i + 1}/${total}`;
+      if (encoder.encodeQueueSize > 6) await new Promise(r => setTimeout(r));
+    }
+    await encoder.flush();
+    muxer.finalize();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([muxer.target.buffer], { type: 'video/mp4' }));
+    a.download = `paper-shuffle-${seed}.mp4`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 8000);
+    toast('MP4 saved');
+  } catch (err){
+    console.error(err);
+    toast('MP4 export failed');
+  } finally {
+    playing = snap.playing; frame = snap.frame; accum = snap.accum;
+    paperIndex = snap.paperIndex; segments = snap.segments;
+    btn.textContent = label; btn.disabled = false; exporting = false; dirty = true;
+  }
+}
+
+// Looping GIF via gifenc — offline capture at a capped size, identical frames
+// collapsed into longer delays. gifenc writes an infinite-loop extension.
+let gifencMod = null;
+const loadGifenc = async () =>
+  (gifencMod ||= await import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js'));
+
+async function exportGif(){
+  if (exporting) return;
+  if (!blocks.length || !activePhotos().length){ toast('Nothing to export yet'); return; }
+  const btn = document.getElementById('btnExport');
+  const label = btn.textContent;
+  exporting = true; btn.disabled = true;
+  const seed = C.get('seed');
+  const snap = { playing, frame, accum, paperIndex, segments };
+  playing = false;
+  try {
+    btn.textContent = 'GIF…';
+    const { GIFEncoder, quantize, applyPalette } = await loadGifenc();
+    const scale = Math.min(1, 640 / Math.max(canvas.width, canvas.height));
+    const gw = Math.max(1, Math.round(canvas.width * scale));
+    const gh = Math.max(1, Math.round(canvas.height * scale));
+    const gcv = document.createElement('canvas');
+    gcv.width = gw; gcv.height = gh;
+    const gcx = gcv.getContext('2d', { willReadFrequently: true });
+    const gif = GIFEncoder();
+    const baseDelay = Math.max(20, Math.round(1000 / C.get('fps')));
+    const total = Math.max(1, Math.round(loopLength()));
+    frame = 0; accum = 0; paperIndex = 0; segments = [];
+    let prevKey = null, prevData = null, run = 0, written = 0;
+    const flush = () => {
+      if (!prevData) return;
+      const palette = quantize(prevData, 256, { format: 'rgb565' });
+      const index = applyPalette(prevData, palette, 'rgb565');
+      gif.writeFrame(index, gw, gh, { palette, delay: run * baseDelay, repeat: 0 });
+      written++;
+    };
+    for (let i = 0; i < total; i++){
+      if (i > 0) advance();
+      dirty = false; render();
+      gcx.clearRect(0, 0, gw, gh);
+      gcx.drawImage(canvas, 0, 0, gw, gh);
+      const data = gcx.getImageData(0, 0, gw, gh).data;
+      const key = crc32(data) + ':' + data.length;
+      if (key === prevKey) run++;
+      else { flush(); prevData = data; prevKey = key; run = 1; }
+      btn.textContent = `${i + 1}/${total}`;
+      if ((i & 3) === 0) await new Promise(r => setTimeout(r));
+    }
+    flush();
+    gif.finish();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([gif.bytes()], { type: 'image/gif' }));
+    a.download = `paper-shuffle-${seed}.gif`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 8000);
+    toast(`GIF saved · ${written} frames`);
+  } catch (err){
+    console.error(err);
+    toast('GIF export failed');
+  } finally {
+    playing = snap.playing; frame = snap.frame; accum = snap.accum;
+    paperIndex = snap.paperIndex; segments = snap.segments;
+    btn.textContent = label; btn.disabled = false; exporting = false; dirty = true;
+  }
+}
+
+// Export button opens a small menu: PNGs, MP4 or GIF.
+const btnExportEl = document.getElementById('btnExport');
+const foot = btnExportEl.closest('.panel-foot') || btnExportEl.parentElement;
+foot.style.position = 'relative';
+const exportMenu = document.createElement('div');
+exportMenu.style.cssText = 'position:absolute; bottom:calc(100% + 8px); display:none;' +
+  'flex-direction:column; min-width:120px; background:#fff; border:1px solid rgba(0,0,0,.06);' +
+  'border-radius:12px; box-shadow:0 14px 34px rgba(0,0,0,.18); padding:6px; z-index:60;';
+exportMenu.innerHTML =
+  '<button data-x="png" style="all:unset;cursor:pointer;padding:8px 12px;border-radius:8px;font:inherit">PNGs</button>' +
+  '<button data-x="mp4" style="all:unset;cursor:pointer;padding:8px 12px;border-radius:8px;font:inherit">MP4</button>' +
+  '<button data-x="gif" style="all:unset;cursor:pointer;padding:8px 12px;border-radius:8px;font:inherit">GIF</button>';
+foot.appendChild(exportMenu);
+const closeExportMenu = () => { exportMenu.style.display = 'none'; };
+btnExportEl.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (exporting) return;
+  exportMenu.style.left = btnExportEl.offsetLeft + 'px';
+  exportMenu.style.display = exportMenu.style.display === 'flex' ? 'none' : 'flex';
 });
+exportMenu.addEventListener('click', (e) => {
+  const x = e.target && e.target.dataset && e.target.dataset.x;
+  if (!x) return;
+  closeExportMenu();
+  if (x === 'png') exportPngs(); else if (x === 'mp4') exportMp4(); else exportGif();
+});
+exportMenu.addEventListener('mouseover', (e) => {
+  if (e.target.dataset && e.target.dataset.x) e.target.style.background = 'rgba(0,0,0,.05)';
+});
+exportMenu.addEventListener('mouseout', (e) => {
+  if (e.target.dataset && e.target.dataset.x) e.target.style.background = 'transparent';
+});
+document.addEventListener('click', closeExportMenu);
 
 const filePick = document.createElement('input');
 filePick.type = 'file'; filePick.accept = 'image/*'; filePick.multiple = true;
