@@ -72,6 +72,7 @@ const schema = [
 
   { type:'section', label:'Animation & Stop-Motion', collapsed:false },
   { type:'slider', key:'fps', label:'FPS', min:1, max:30, step:1, default:6 },
+  { type:'slider', key:'gifSampleFps', label:'GIF Frames/s', min:1, max:30, step:1, default:8 },
   { type:'slider', key:'tileBeat', label:'Tile Beat', min:1, max:12, step:1, default:1, unit:'f' },
   { type:'slider', key:'sweepHold', label:'Sweep Hold', min:0, max:40, step:1, default:6, unit:'f' },
   { type:'select', key:'entry', label:'Entry', default:'snap', options:[
@@ -387,14 +388,22 @@ async function decodeGif(file){
   } catch { return null; }
 }
 
-// The GIF frame to show right now. Advanced one frame per stop-motion BEAT (in
-// order, looping) — so it reads as stop-motion, like flipping through uploaded
-// stills, rather than smooth video. Freezes when the animation is paused.
+// Resample a decoded GIF to "GIF Frames/s" evenly-spaced stills across its real
+// duration, and pick the still for the current beat. `k` is the still index (for
+// per-image paper), `frame` the canvas to draw. One still advances per beat, so
+// it reads as stop-motion — like flipping through uploaded stills.
+function gifStill(g){
+  const sfps = C.get('gifSampleFps') || 8;
+  const count = Math.max(1, Math.round((g.total / 1000) * sfps));
+  const k = ((frame % count) + count) % count;
+  const t = (k + 0.5) * (g.total / count);          // midpoint time of this still
+  let i = 0; while (i < g.cum.length - 1 && t >= g.cum[i]) i++;
+  return { k, count, canvas: g.frames[i] };
+}
 function currentGifFrame(photo){
   const g = photo.gif;
   if (!g || !g.frames.length) return photo.img;
-  const n = g.frames.length;
-  return g.frames[((frame % n) + n) % n];
+  return gifStill(g).canvas;
 }
 
 let cutModelWarned = false;
@@ -611,10 +620,8 @@ function currentImageId(){
     base = segments[0] ? segments[0].cur : 0;
     photo = list[clamp(base, 0, Math.max(0, list.length - 1))];
   }
-  if (photo && photo.isGif && photo.gif){
-    const n = photo.gif.frames.length;
-    return base * 100000 + (((frame % n) + n) % n);   // distinct id per GIF frame
-  }
+  if (photo && photo.isGif && photo.gif)
+    return base * 100000 + gifStill(photo.gif).k;     // distinct id per sampled still
   return base;
 }
 
@@ -1179,22 +1186,20 @@ function zipStore(files){
 }
 
 let exporting = false;
-document.getElementById('btnExport').addEventListener('click', async () => {
+
+// PNGs: one full loop rendered offline, deduped, packed into a numbered zip.
+async function exportPngs(){
   if (exporting) return;
   if (!blocks.length || !activePhotos().length){ toast('Nothing to export yet'); return; }
   const btn = document.getElementById('btnExport');
   const label = btn.textContent;
   exporting = true; btn.disabled = true;
   const seed = C.get('seed');
-  // Rewind to a clean start, then step frame-by-frame off the render loop.
   const snap = { playing, frame, accum, paperIndex, segments };
   playing = false;
   try {
     const total = Math.max(1, Math.round(loopLength()));
     frame = 0; accum = 0; paperIndex = 0; segments = [];
-    // A stop-motion loop holds on the same picture for many beats, so most frames
-    // are byte-for-byte repeats. Keep only frames whose pixels differ from the
-    // last kept one, then number the survivors consecutively.
     const kept = [];
     const seen = new Set();
     for (let i = 0; i < total; i++){
@@ -1205,7 +1210,7 @@ document.getElementById('btnExport').addEventListener('click', async () => {
       const key = crc32(data) + ':' + data.length;
       if (!seen.has(key)){ seen.add(key); kept.push(data); }
       btn.textContent = `${i + 1}/${total}`;
-      if ((i & 3) === 0) await new Promise(r => setTimeout(r));   // let the label repaint
+      if ((i & 3) === 0) await new Promise(r => setTimeout(r));
     }
     const pad = String(kept.length).length;
     const files = kept.map((data, i) => ({
@@ -1220,13 +1225,91 @@ document.getElementById('btnExport').addEventListener('click', async () => {
     console.error(err);
     toast('Export failed');
   } finally {
-    // restore the live timeline exactly where it was
     playing = snap.playing; frame = snap.frame; accum = snap.accum;
     paperIndex = snap.paperIndex; segments = snap.segments;
     btn.textContent = label; btn.disabled = false; exporting = false;
     dirty = true;
   }
+}
+
+// MP4 via MediaRecorder — records the canvas in real time for one full loop while
+// it plays. H.264/MP4 has no alpha, but the sheet is opaque; falls back to WebM
+// where MP4 recording isn't supported.
+async function exportMp4(){
+  if (exporting) return;
+  if (!blocks.length || !activePhotos().length){ toast('Nothing to export yet'); return; }
+  if (typeof MediaRecorder === 'undefined'){ toast('Recording not supported here'); return; }
+  const cand = ['video/mp4;codecs=avc1.640028', 'video/mp4;codecs=avc1', 'video/mp4'];
+  let mime = cand.find(m => MediaRecorder.isTypeSupported(m)), ext = 'mp4';
+  if (!mime){
+    mime = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+             .find(m => MediaRecorder.isTypeSupported(m));
+    ext = 'webm';
+  }
+  if (!mime){ toast('Recording not supported here'); return; }
+
+  const btn = document.getElementById('btnExport');
+  const label = btn.textContent;
+  const seed = C.get('seed');
+  const fps = C.get('fps');
+  const durationMs = (Math.max(1, Math.round(loopLength())) / fps) * 1000;
+  exporting = true; btn.disabled = true; btn.textContent = 'REC…';
+  try {
+    const stream = canvas.captureStream(Math.max(fps, 12));
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 12e6 });
+    const chunks = []; rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+    const done = new Promise(res => rec.onstop = res);
+    resetTimeline(); playing = true; syncPlay();     // play from the top, once
+    rec.start();
+    await new Promise(r => setTimeout(r, durationMs + 250));
+    rec.stop();
+    await done;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(chunks, { type: mime }));
+    a.download = `paper-shuffle-${seed}.${ext}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 8000);
+    toast(ext === 'mp4' ? 'MP4 saved' : 'Saved WebM (MP4 unsupported here)');
+  } catch (err){
+    console.error(err);
+    toast('Video export failed');
+  } finally {
+    btn.textContent = label; btn.disabled = false; exporting = false;
+  }
+}
+
+// Export button opens a small menu: PNGs or MP4.
+const btnExportEl = document.getElementById('btnExport');
+const foot = btnExportEl.closest('.panel-foot') || btnExportEl.parentElement;
+foot.style.position = 'relative';
+const exportMenu = document.createElement('div');
+exportMenu.style.cssText = 'position:absolute; bottom:calc(100% + 8px); display:none;' +
+  'flex-direction:column; min-width:120px; background:#fff; border:1px solid rgba(0,0,0,.06);' +
+  'border-radius:12px; box-shadow:0 14px 34px rgba(0,0,0,.18); padding:6px; z-index:60;';
+exportMenu.innerHTML =
+  '<button data-x="png" style="all:unset;cursor:pointer;padding:8px 12px;border-radius:8px;font:inherit">PNGs</button>' +
+  '<button data-x="mp4" style="all:unset;cursor:pointer;padding:8px 12px;border-radius:8px;font:inherit">MP4</button>';
+foot.appendChild(exportMenu);
+const closeExportMenu = () => { exportMenu.style.display = 'none'; };
+btnExportEl.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (exporting) return;
+  exportMenu.style.left = btnExportEl.offsetLeft + 'px';
+  exportMenu.style.display = exportMenu.style.display === 'flex' ? 'none' : 'flex';
 });
+exportMenu.addEventListener('click', (e) => {
+  const x = e.target && e.target.dataset && e.target.dataset.x;
+  if (!x) return;
+  closeExportMenu();
+  if (x === 'png') exportPngs(); else exportMp4();
+});
+exportMenu.addEventListener('mouseover', (e) => {
+  if (e.target.dataset && e.target.dataset.x) e.target.style.background = 'rgba(0,0,0,.05)';
+});
+exportMenu.addEventListener('mouseout', (e) => {
+  if (e.target.dataset && e.target.dataset.x) e.target.style.background = 'transparent';
+});
+document.addEventListener('click', closeExportMenu);
 
 const filePick = document.createElement('input');
 filePick.type = 'file'; filePick.accept = 'image/*'; filePick.multiple = true;
