@@ -1671,7 +1671,7 @@ const SESSION = __m_session;
 
 
 
-const BUILD = '0904-1840';
+const BUILD = '0905-1509';
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const printBuf = document.createElement('canvas');
@@ -1769,7 +1769,7 @@ const schema = [
 
   { type:'section', label:'Animation & Stop-Motion', collapsed:false },
   { type:'slider', key:'fps', label:'FPS', min:1, max:30, step:1, default:6 },
-  { type:'slider', key:'exportSecs', label:'Export Length', min:1, max:30, step:1, default:6, unit:'s' },
+  { type:'number', key:'exportSecs', label:'Export Length', min:1, max:3600, step:1, default:6, unit:'s' },
   { type:'slider', key:'mp4Loops', label:'MP4 Loops', min:1, max:10, step:1, default:1, unit:'x' },
   { type:'slider', key:'tileBeat', label:'Tile Beat', min:1, max:12, step:1, default:1, unit:'f' },
   { type:'slider', key:'sweepHold', label:'Sweep Hold', min:0, max:40, step:1, default:6, unit:'f' },
