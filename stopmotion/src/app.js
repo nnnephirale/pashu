@@ -327,13 +327,25 @@ function assemblyLength(fps){
 // assembly plus a tail of shuffle frames long enough to read as one full cycle.
 function loopLength(){
   const fps = C.get('fps');
+  // A GIF subject cycles through its sampled stills one per beat, which the image
+  // count alone doesn't capture — make sure the loop is long enough to show them.
+  let gifBeats = 0;
+  for (const p of activePhotos())
+    if (p.isGif && p.gif)
+      gifBeats = Math.max(gifBeats, Math.round((p.gif.total / 1000) * C.get('gifSampleFps')));
   if (C.get('mode') === 'sweep'){
     const n = Math.max(1, activePhotos().length);
     const cycleLen = blocks.length + C.get('sweepHold');
-    return Math.max(1, n * cycleLen * C.get('tileBeat'));
+    return Math.max(1, n * cycleLen * C.get('tileBeat'), gifBeats);
   }
   const tail = Math.max(Math.round(fps * 2), C.get('holdFrames') * 4);
-  return Math.max(1, Math.ceil(assemblyLength(fps)) + tail);
+  return Math.max(1, Math.ceil(assemblyLength(fps)) + tail, gifBeats);
+}
+
+// Frames an export should capture: never fewer than one full natural loop (so a
+// project is never cut off), and longer if Export Length asks for more.
+function exportFrames(){
+  return Math.max(1, Math.round(loopLength()), Math.round(C.get('exportSecs') * C.get('fps')));
 }
 
 // ── drawing ──────────────────────────────────────────────────────────────────
@@ -1211,7 +1223,7 @@ async function exportPngs(){
   const snap = { playing, frame, accum, paperIndex, segments };
   playing = false;
   try {
-    const total = Math.max(1, Math.round(C.get('exportSecs') * C.get('fps')));
+    const total = exportFrames();
     frame = 0; accum = 0; paperIndex = 0; segments = [];
     const kept = [];
     const seen = new Set();
@@ -1305,7 +1317,7 @@ async function exportMp4(){
     });
     encoder.configure({ codec, width: W, height: H, bitrate, framerate: fps });
 
-    const window = Math.max(1, Math.round(C.get('exportSecs') * C.get('fps')));
+    const window = exportFrames();
     const loops = Math.max(1, Math.round(C.get('mp4Loops')));
     const durUs = Math.round(1e6 / fps);
     let out = 0;
@@ -1369,7 +1381,7 @@ async function exportGif(){
     const gcx = gcv.getContext('2d', { willReadFrequently: true });
     const gif = GIFEncoder();
     const baseDelay = Math.max(20, Math.round(1000 / C.get('fps')));
-    const total = Math.max(1, Math.round(C.get('exportSecs') * C.get('fps')));
+    const total = exportFrames();
     frame = 0; accum = 0; paperIndex = 0; segments = [];
     let prevKey = null, prevData = null, run = 0, written = 0;
     const flush = () => {

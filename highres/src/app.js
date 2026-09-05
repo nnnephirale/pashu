@@ -316,6 +316,12 @@ function loopLength(){
   return Math.max(1, Math.ceil(assemblyLength(fps)) + tail);
 }
 
+// Frames an export should capture: never fewer than one full natural loop (so a
+// project is never cut off), and longer if Export Length asks for more.
+function exportFrames(){
+  return Math.max(1, Math.round(loopLength()), Math.round(C.get('exportSecs') * C.get('fps')));
+}
+
 // Which image is on screen right now — used so "Per Image" paper changes in step
 // with the picture. Sequential: the sweep's current cycle. Randomized: the first
 // block's current image.
@@ -942,7 +948,7 @@ async function exportPngs(){
   const snap = { playing, frame, accum, paperIndex, segments };
   playing = false;
   try {
-    const total = Math.max(1, Math.round(C.get('exportSecs') * C.get('fps')));
+    const total = exportFrames();
     frame = 0; accum = 0; paperIndex = 0; segments = [];
     const kept = [];
     const seen = new Set();
@@ -1031,7 +1037,7 @@ async function exportMp4(){
     });
     encoder.configure({ codec, width: W, height: H, bitrate, framerate: fps });
 
-    const window = Math.max(1, Math.round(C.get('exportSecs') * C.get('fps')));
+    const window = exportFrames();
     const loops = Math.max(1, Math.round(C.get('mp4Loops')));
     const durUs = Math.round(1e6 / fps);
     let out = 0;
@@ -1094,7 +1100,7 @@ async function exportGif(){
     const gcx = gcv.getContext('2d', { willReadFrequently: true });
     const gif = GIFEncoder();
     const baseDelay = Math.max(20, Math.round(1000 / C.get('fps')));
-    const total = Math.max(1, Math.round(C.get('exportSecs') * C.get('fps')));
+    const total = exportFrames();
     frame = 0; accum = 0; paperIndex = 0; segments = [];
     let prevKey = null, prevData = null, run = 0, written = 0;
     const flush = () => {
