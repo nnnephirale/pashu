@@ -1671,7 +1671,7 @@ const SESSION = __m_session;
 
 
 
-const BUILD = '0905-1521';
+const BUILD = '0908-0812';
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const printBuf = document.createElement('canvas');
@@ -2120,21 +2120,23 @@ function render(){
     let cycle = Math.floor(tick / cycleLen);
     let pos = tick % cycleLen;
     // Settle on the final image rather than wrapping when Loop is off
-    if (!C.get('loop') && n > 1 && cycle >= n - 1){ cycle = n - 2; pos = cycleLen; }
+    if (!C.get('loop') && n > 1 && cycle >= n){ cycle = n - 1; pos = cycleLen; }
 
-    // The previously-completed image, laid flat and frozen under everything, so
-    // the gaps left as a tile jitters or animates in reveal it instead of paper.
-    const baseImg = ((cycle % n) + n) % n;
+    // The sheet starts EMPTY. The first pass (cycle 0) lays image 0 tile by tile
+    // onto bare paper; each later pass lays the next image over the one before.
+    // The frozen base is the previous pass's image — nothing at all on the first
+    // pass, so gaps show paper while image 0 assembles.
+    const baseCycle = cycle - 1;
+    const baseImg = baseCycle >= 0 ? ((baseCycle % n) + n) % n : -1;
 
     for (const b of blocks){
       if (!covered(b)) continue;
       const laid = b.rank < pos;
-      // The sheet always starts FULL: at cycle 0 every tile already carries
-      // image 0 and the sweep lays image 1 over it. A tile is never blank.
-      const shownCycle = laid ? cycle + 1 : cycle;
-      const img = ((shownCycle % n) + n) % n;
-      drawnThisFrame.push([b.rank, img]);
-      if (trace) drawn.push([b.rank, img]);
+      // A laid tile carries this pass's image; the rest still show the previous
+      // pass (nothing during cycle 0, so untouched tiles are still bare paper).
+      const shownCycle = laid ? cycle : cycle - 1;
+      const img = shownCycle >= 0 ? ((shownCycle % n) + n) % n : -1;
+      if (img >= 0){ drawnThisFrame.push([b.rank, img]); if (trace) drawn.push([b.rank, img]); }
 
       const landedAt = ((laid ? cycle : cycle - 1) * cycleLen + b.rank) * step;
       const since = Math.max(frame - landedAt, 0);
@@ -2157,11 +2159,13 @@ function render(){
         const jy = shash(seed, p.idx * 3 + frame, 52) * posJ;
         const jr = shash(seed, p.idx * 5 + frame, 56) * rotJ;
         // frozen base fills this cell first — no jitter, no entry — then the
-        // current tile animates/jitters over it, so every gap reveals an image
-        if (basePeek)
+        // current tile animates/jitters over it, so every gap reveals an image.
+        // Both are skipped when there's nothing yet (index -1), leaving bare paper.
+        if (basePeek && baseImg >= 0)
           drawBlockPanel(grid, b, p, baseImg, 1, 1, p.offX * pOff, p.offY * pOff, cw, ch, 0);
-        drawBlockPanel(grid, b, p, img, alpha, sc,
-          p.offX * pOff + ex + jx, p.offY * pOff + ey + jy, cw, ch, jr);
+        if (img >= 0)
+          drawBlockPanel(grid, b, p, img, alpha, sc,
+            p.offX * pOff + ex + jx, p.offY * pOff + ey + jy, cw, ch, jr);
       }
     }
   } else {
