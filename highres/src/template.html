@@ -16,6 +16,9 @@
     <canvas id="c"></canvas>
   </div>
   <div class="size-bar" id="sizeBar">
+    <span class="bar-grip" id="barGrip" title="Drag to move this bar" aria-label="Move bar" role="button" tabindex="0">
+      <i></i><i></i><i></i>
+    </span>
     <label>W <input type="number" id="sizeW" value="1080" min="120" max="4000" step="10"></label>
     <label>H <input type="number" id="sizeH" value="1920" min="120" max="4000" step="10"></label>
     <select id="sizePreset">
@@ -25,6 +28,11 @@
       <option value="1080x1080">1:1 Square</option>
       <option value="1600x1000">16:10 Wide</option>
     </select>
+    <span class="bar-sep" aria-hidden="true"></span>
+    <span class="base-ctrl" title="Solid base colour — fills the empty sheet behind the segments instead of paper">
+      <input type="color" id="baseColor" value="#EDE9E0" aria-label="Base colour">
+      <button type="button" id="baseToggle" class="base-toggle" aria-pressed="false">Base</button>
+    </span>
   </div>
 </div>
 

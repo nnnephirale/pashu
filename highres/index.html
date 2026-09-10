@@ -79,6 +79,42 @@ canvas{ display:block; max-width:100%; max-height:100%; border-radius:3px; }
 .size-bar input::-webkit-outer-spin-button,
 .size-bar input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 
+/* grip: three vertical dots, drag to reposition the whole bar */
+.bar-grip{
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:3px; padding:0 6px; align-self:stretch;
+  cursor:grab; touch-action:none;
+}
+.bar-grip:active{cursor:grabbing}
+.bar-grip i{width:3px;height:3px;border-radius:50%;background:var(--ink-3);opacity:.7;
+  transition:background .2s var(--ease)}
+.bar-grip:hover i{background:var(--ink-2);opacity:1}
+
+.bar-sep{width:1px;align-self:stretch;margin:3px 3px;background:var(--line-2)}
+
+/* solid base colour picker + on/off */
+.base-ctrl{display:flex;align-items:center;gap:6px;padding-right:2px}
+.base-ctrl input[type=color]{
+  -webkit-appearance:none;appearance:none;
+  width:20px;height:20px;padding:0;border:0;border-radius:50%;
+  background:transparent;cursor:pointer;flex:0 0 auto;
+  box-shadow:0 0 0 1px var(--line-2), inset 0 0 0 2px #fff;
+}
+.base-ctrl input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+.base-ctrl input[type=color]::-webkit-color-swatch{border:0;border-radius:50%}
+.base-ctrl input[type=color]::-moz-color-swatch{border:0;border-radius:50%}
+.base-toggle{
+  border:0;background:transparent;font:inherit;color:var(--ink-3);
+  padding:4px 9px;border-radius:999px;cursor:pointer;
+  transition:color .2s var(--ease),background .2s var(--ease);
+}
+.base-toggle:hover{background:var(--fill);color:var(--ink)}
+.base-toggle[aria-pressed="true"]{background:var(--ink);color:#fff}
+
+/* once dragged, the bar sits at an explicit left/top instead of bottom-centre */
+.size-bar.moved{left:auto;right:auto;bottom:auto;transform:translateY(6px)}
+.stage:hover .size-bar.moved{transform:translateY(0)}
+
 /* ---------- panel ---------- */
 .panel{
   position:fixed; top:14px; right:14px; bottom:14px; width:calc(var(--panel-w) - 28px);
@@ -405,6 +441,9 @@ body.view-only .canvas-wrap{border-radius:0;box-shadow:none}
     <canvas id="c"></canvas>
   </div>
   <div class="size-bar" id="sizeBar">
+    <span class="bar-grip" id="barGrip" title="Drag to move this bar" aria-label="Move bar" role="button" tabindex="0">
+      <i></i><i></i><i></i>
+    </span>
     <label>W <input type="number" id="sizeW" value="1080" min="120" max="4000" step="10"></label>
     <label>H <input type="number" id="sizeH" value="1920" min="120" max="4000" step="10"></label>
     <select id="sizePreset">
@@ -414,6 +453,11 @@ body.view-only .canvas-wrap{border-radius:0;box-shadow:none}
       <option value="1080x1080">1:1 Square</option>
       <option value="1600x1000">16:10 Wide</option>
     </select>
+    <span class="bar-sep" aria-hidden="true"></span>
+    <span class="base-ctrl" title="Solid base colour — fills the empty sheet behind the segments instead of paper">
+      <input type="color" id="baseColor" value="#EDE9E0" aria-label="Base colour">
+      <button type="button" id="baseToggle" class="base-toggle" aria-pressed="false">Base</button>
+    </span>
   </div>
 </div>
 
@@ -1671,7 +1715,7 @@ const SESSION = __m_session;
 
 
 
-const BUILD = '0908-0812';
+const BUILD = '0910-0025';
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const printBuf = document.createElement('canvas');
@@ -2223,9 +2267,14 @@ function render(){
   ctx.rotate(sh.r);
   ctx.translate(-cw/2, -ch/2);
 
-  ctx.fillStyle = '#EDE9E0';
+  // The sheet's base is normally the paper scan. "Base" in the size bar swaps it
+  // for a flat colour, so the empty sheet the first image assembles onto (and any
+  // gap between segments) reads as a solid fill instead of paper.
+  const baseSolid = !!C.getExtra('baseSolid');
+  const baseColor = C.getExtra('baseColor') || '#EDE9E0';
+  ctx.fillStyle = baseSolid ? baseColor : '#EDE9E0';
   ctx.fillRect(0, 0, cw, ch);
-  if (paper) P.drawSheet(ctx, paper.img, C.get('paperScale'), cw, ch);
+  if (paper && !baseSolid) P.drawSheet(ctx, paper.img, C.get('paperScale'), cw, ch);
 
   ctx.save();
   ctx.globalCompositeOperation = C.get('printBlend');
@@ -2233,7 +2282,7 @@ function render(){
   ctx.drawImage(layer, 0, 0);
   ctx.restore();
 
-  if (sampler && paper)
+  if (sampler && paper && !baseSolid)
     P.paintPaperLight(ctx, sampler, paper.img,
       { lighting: C.get('paperLighting'), contrast: C.get('lightingContrast'),
         paperScale: C.get('paperScale') }, cw, ch);
@@ -2412,11 +2461,14 @@ window.addEventListener('keydown', (e) => {
 // A published session owns its URL forever. Opening one puts the app in session
 // mode: edits are live but transient until Save writes them back to the same id.
 let session = null;            // { id, key, sig }
-const docNow = () => ({
-  settings: C.all(),
-  size: { w: canvas.width, h: canvas.height, preset: sizePreset.value },
-  photos
+// The canvas descriptor carried by a session: dimensions plus the base-colour
+// choice, so a saved/shared session reopens with the same solid base.
+const sizeDoc = () => ({
+  w: canvas.width, h: canvas.height, preset: sizePreset.value,
+  baseColor: C.getExtra('baseColor') || '#EDE9E0',
+  baseSolid: !!C.getExtra('baseSolid')
 });
+const docNow = () => ({ settings: C.all(), size: sizeDoc(), photos });
 const isDirty = () => !!session && SESSION.signature(docNow()) !== session.sig;
 
 function markClean(){
@@ -2462,6 +2514,76 @@ function syncSaveBtn(){
   document.body.classList.toggle('unsaved', dirty);
 }
 C.onAny(() => syncSaveBtn());
+
+// ── base colour + draggable bar ───────────────────────────────────────────────
+const sizeBar = document.getElementById('sizeBar');
+const barGrip = document.getElementById('barGrip');
+const stageEl = document.getElementById('stage');
+const baseColorInp = document.getElementById('baseColor');
+const baseToggle = document.getElementById('baseToggle');
+
+// Reflect the stored base-colour choice into the swatch + toggle, mark the frame
+// stale and (since the base is part of the saved document now) refresh Save.
+function syncBase(){
+  baseColorInp.value = C.getExtra('baseColor') || '#EDE9E0';
+  baseToggle.setAttribute('aria-pressed', String(!!C.getExtra('baseSolid')));
+  dirty = true;
+  syncSaveBtn();
+}
+baseColorInp.addEventListener('input', () => {
+  C.setExtra('baseColor', baseColorInp.value);
+  // picking a colour is a clear intent to use it — switch the solid base on
+  C.setExtra('baseSolid', true);
+  syncBase();
+});
+baseToggle.addEventListener('click', () => {
+  C.setExtra('baseSolid', !C.getExtra('baseSolid'));
+  syncBase();
+});
+
+// Drag the whole bar around the stage by its grip. Position is kept in stage
+// coordinates and clamped so the bar can never be dragged off-screen.
+function placeBar(x, y){
+  const s = stageEl.getBoundingClientRect();
+  const b = sizeBar.getBoundingClientRect();
+  const px = clamp(x, 0, Math.max(0, s.width - b.width));
+  const py = clamp(y, 0, Math.max(0, s.height - b.height));
+  sizeBar.classList.add('moved');
+  sizeBar.style.left = px + 'px';
+  sizeBar.style.top = py + 'px';
+}
+function applyBarPos(){
+  const p = C.getExtra('barPos');
+  if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) placeBar(p.x, p.y);
+}
+(function initBarDrag(){
+  let dragging = false, ox = 0, oy = 0;
+  barGrip.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    dragging = true;
+    try { barGrip.setPointerCapture(e.pointerId); } catch {}
+    const b = sizeBar.getBoundingClientRect();
+    ox = e.clientX - b.left; oy = e.clientY - b.top;   // grab point within the bar
+    document.body.style.userSelect = 'none';
+  });
+  barGrip.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const s = stageEl.getBoundingClientRect();
+    placeBar(e.clientX - s.left - ox, e.clientY - s.top - oy);
+  });
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.userSelect = '';
+    const s = stageEl.getBoundingClientRect();
+    const b = sizeBar.getBoundingClientRect();
+    C.setExtra('barPos', { x: b.left - s.left, y: b.top - s.top });
+  };
+  barGrip.addEventListener('pointerup', end);
+  barGrip.addEventListener('pointercancel', end);
+})();
+// A stage resize can leave a positioned bar out of bounds — re-clamp it.
+window.addEventListener('resize', () => { if (sizeBar.classList.contains('moved')) applyBarPos(); });
 
 // Leaving with unsaved edits throws them away, so say so.
 window.addEventListener('beforeunload', (e) => {
@@ -2531,7 +2653,7 @@ document.getElementById('btnShare').addEventListener('click', async () => {
   try {
     const payload = SESSION.serialize({
       settings: C.all(),
-      size: { w: canvas.width, h: canvas.height, preset: sizePreset.value },
+      size: sizeDoc(),
       photos
     });
     const { id, key } = await SESSION.publish(payload);
@@ -2558,6 +2680,11 @@ async function applySession(sess, mode, route){
     sizeW.value = sess.size.w; sizeH.value = sess.size.h;
     if (sess.size.preset) sizePreset.value = sess.size.preset;
     applySize();
+  }
+  if (sess.size){
+    if (sess.size.baseColor) C.setExtra('baseColor', sess.size.baseColor);
+    C.setExtra('baseSolid', !!sess.size.baseSolid);
+    syncBase();
   }
   photos = [];
   for (const e of (sess.images || [])){
@@ -2950,6 +3077,8 @@ window.__ps = {
   }
   resetTimeline();
   fitCanvas();
+  syncBase();
+  applyBarPos();
 })();
 
 })();

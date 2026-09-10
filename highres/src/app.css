@@ -69,6 +69,42 @@ canvas{ display:block; max-width:100%; max-height:100%; border-radius:3px; }
 .size-bar input::-webkit-outer-spin-button,
 .size-bar input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 
+/* grip: three vertical dots, drag to reposition the whole bar */
+.bar-grip{
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:3px; padding:0 6px; align-self:stretch;
+  cursor:grab; touch-action:none;
+}
+.bar-grip:active{cursor:grabbing}
+.bar-grip i{width:3px;height:3px;border-radius:50%;background:var(--ink-3);opacity:.7;
+  transition:background .2s var(--ease)}
+.bar-grip:hover i{background:var(--ink-2);opacity:1}
+
+.bar-sep{width:1px;align-self:stretch;margin:3px 3px;background:var(--line-2)}
+
+/* solid base colour picker + on/off */
+.base-ctrl{display:flex;align-items:center;gap:6px;padding-right:2px}
+.base-ctrl input[type=color]{
+  -webkit-appearance:none;appearance:none;
+  width:20px;height:20px;padding:0;border:0;border-radius:50%;
+  background:transparent;cursor:pointer;flex:0 0 auto;
+  box-shadow:0 0 0 1px var(--line-2), inset 0 0 0 2px #fff;
+}
+.base-ctrl input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+.base-ctrl input[type=color]::-webkit-color-swatch{border:0;border-radius:50%}
+.base-ctrl input[type=color]::-moz-color-swatch{border:0;border-radius:50%}
+.base-toggle{
+  border:0;background:transparent;font:inherit;color:var(--ink-3);
+  padding:4px 9px;border-radius:999px;cursor:pointer;
+  transition:color .2s var(--ease),background .2s var(--ease);
+}
+.base-toggle:hover{background:var(--fill);color:var(--ink)}
+.base-toggle[aria-pressed="true"]{background:var(--ink);color:#fff}
+
+/* once dragged, the bar sits at an explicit left/top instead of bottom-centre */
+.size-bar.moved{left:auto;right:auto;bottom:auto;transform:translateY(6px)}
+.stage:hover .size-bar.moved{transform:translateY(0)}
+
 /* ---------- panel ---------- */
 .panel{
   position:fixed; top:14px; right:14px; bottom:14px; width:calc(var(--panel-w) - 28px);
