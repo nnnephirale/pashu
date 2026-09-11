@@ -1810,7 +1810,7 @@ const CUT = __m_cutout;
 
 
 
-const BUILD = '0905-1521';
+const BUILD = '0911-1644';
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const printBuf = document.createElement('canvas');
@@ -1960,6 +1960,9 @@ function renderStrip(strip, list, onToggle, onRemove){
 const refreshStrips = () => {
   dirty = true;
   syncSaveBtn();
+  // collageMode() turns on the moment the first image lands (and off when the
+  // last one goes), so the mode locks have to follow the photo list too.
+  syncCollageLocks();
   // the empty state already says how to add images — don't say it twice
   photoHint.style.display = photos.length ? '' : 'none';
   renderStrip(photoStrip, photos,
@@ -2797,6 +2800,29 @@ function syncModeLocks(){
 }
 C.onChange('mode', syncModeLocks);
 syncModeLocks();
+
+// Cutout splits the app into two render paths, and each has controls the other
+// ignores. In collage mode only the cut-out subject is drawn (sized by Subject
+// Size); the full image pressed into the sheet — what Print Scale, Fit and the
+// print blend act on — isn't drawn at all unless Image background brings it back.
+// Whole-image mode is the reverse. Lock whichever set is inert so a dragged
+// slider that does nothing says why instead of looking broken.
+const PRINT_LOCK = 'Not used while Cut out subjects is on — the sheet shows the ' +
+  'cut-out. Size it with Subject Size, or turn on Image background to print the ' +
+  'full image behind it';
+const SUBJECT_LOCK = 'Only used with Cut out subjects on';
+function syncCollageLocks(){
+  const collage = collageMode();
+  const printInert = collage && !C.get('imageBg');
+  for (const k of ['imageFit', 'printBlend', 'printOpacity', 'printScale'])
+    C.setLocked(k, printInert, C.get(k), PRINT_LOCK);
+  for (const k of ['subjectScale', 'subjectX', 'subjectY', 'edgeWidth', 'edgeRough', 'pieceShadow'])
+    C.setLocked(k, !collage, C.get(k), SUBJECT_LOCK);
+  dirty = true;
+}
+C.onChange('cutout', syncCollageLocks);
+C.onChange('imageBg', syncCollageLocks);
+syncCollageLocks();
 
 C.onChange('reroll', () => C.set('seed', 1 + Math.floor(Math.random() * 9998)));
 C.onChange('resetAll2', resetEverything);
